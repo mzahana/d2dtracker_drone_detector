@@ -1,0 +1,26 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: >-
+  D2DTracker: Drone Detector using a Combination YOLO
+  Detector and Depth Maps
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Mohamed
+    family-names: Abdelkader
+    email: mabdelkader@psu.edu.sa
+    affiliation: Prince Sultan University
+    orcid: 'https://orcid.org/0000-0002-0518-852X'
+repository-code: 'https://github.com/mzahana/d2dtracker_drone_detector.git'
+abstract: >-
+  A ROS package with nodes that implement drone detection
+  using YOLO and depth maps.
+keywords:
+  - Drone Detection
+license: MIT
+version: '0.1'
+date-released: '2023-03-01'
