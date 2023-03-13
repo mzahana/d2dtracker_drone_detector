@@ -1,0 +1,26 @@
+<!-- Author : Mohamed Abdelkader, mohamedashraf123@gmail.com-->
+<launch>
+    <arg name="tracking_frame" default="map" />
+    <arg name="target_frameid" default="tag" />
+
+    <arg name="respawn" default="false"/>"
+
+    <!-- Multi-target KF tracker-->
+        <node pkg="drone_hunter_perception" name="kf_tracker_node" type="kf_tracker_node" output="screen" clear_params="true" required="$(eval not respawn)" respawn="$(arg respawn)">
+            <remap from="measurement/pose_array" to="drone_detections"/>
+            <param name="dt_pred" value="0.05"/> <!-- rate of prediction step -->
+            <param name="q_std" value="1.0"/> <!-- Standard deviation of the process noise-->
+            <param name="q_pos_std" value="1.0"/><!-- Standard deviation of position process noise-->
+            <param name="q_vel_std" value="1.0"/><!-- Standard deviation of velocity process noise-->
+            <param name="r_std" value="0.5"/> <!-- Standard deviation of the observation noise-->
+            <param name="print_debug_msg" value="false"/>
+            <param name="tracking_frame" value="$(arg tracking_frame)" />
+            <param name="target_frameid" value="$(arg target_frameid)"/> <!-- frame name of the detected target-->
+            <param name="listen_tf" value="True"/> <!-- get target measurements from TF tree-->
+
+            <param name="V_max" value="30.0"/> <!-- Maximum uncertainty before rejecting a track [m^3] -->
+            <param name="V_certain" value="5.0"/> <!-- Minimum uncertainty for confirming a track [m^3] -->
+            <param name="N_meas" value="20" /> <!-- Minimum number of measurements to confirm a track-->
+            <param name="l_threshold" value="-5.0"/> <!-- measurement association log-likelihood threshold-->
+        </node>
+</launch>
