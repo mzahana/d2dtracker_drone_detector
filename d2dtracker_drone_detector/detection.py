@@ -1,231 +1,27 @@
-#!/usr/bin/env python
-"""
-BSD 3-Clause License
-
-Copyright (c) 2020, Mohamed Abdelkader Zahana
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-"""
-
-import rclpy
-from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import PoseArray, PointStamped, Pose
-from cv_bridge import CvBridge, CvBridgeError
-
+#!/usr/bin/env python3
 import numpy as np
-
 import cv2
-
 import math
-
 import time
 
-import tf
-from tf import transformations as tfs
-
-"""
-TODO 
-1. implement measurement covariance matrix R, and publish it with positions
-"""
-
 class DroneDetector:
-    def __init__(self):
-
-        self.img_topic_ = rclpy.get_param('~img_topic', 'depth_camera/depth/image_raw')
-        self.camInfo_topic_ = rclpy.get_param('~camInfo_topic', 'depth_camera/depth/camera_info')
-        
-        # Subscribe to depth image
-        rclpy.Subscriber(self.img_topic_, Image, self.depthCb, queue_size=10)
-
-        # Subscribe to camera info topic
-        rclpy.Subscriber(self.camInfo_topic_, CameraInfo, self.camInfoCb, queue_size=10)
-
-        # Publisher of detections positions
-        self.detections_pub_ = rclpy.Publisher('drone_detections', PoseArray, queue_size=10)
-
-        # Publisher of image with overlayed detections
-        self.img_pub_ = rclpy.Publisher('detections_image', Image, queue_size=10)
-
-        self.tf_listener_ = tf.TransformListener()
-
-        self.debug_ = rclpy.get_param('~debug', True)
-        self.show_debug_images_ = rclpy.get_param('~show_debug_images', True)
-        self.pub_processed_images_ = rclpy.get_param('~publish_processed_images', True)
-
-        self.reference_frame_ = rclpy.get_param('~reference_frame', 'map')
+    def __init__(self,area_bounds,circular_bounds,convexity_bounds,d_group_max,min_group_size,max_cam_depth,depth_scale_factor,depth_step,debug):
 
         self.camera_info_ = None
-
         """
         Contour constraints
         """
-        self.area_bounds_ = rclpy.get_param('~area_bounds', [500, 1e4]) #[100, 1e4] # in pixels
-        self.circ_bounds_ = rclpy.get_param('~circular_bounds', [0.3, 0.99]) # from 0 to 1
-        self.conv_bounds_ = rclpy.get_param('~convexity_bounds', [0.7, 1.0]) # from 0 to 1
-        self.d_group_max_ = rclpy.get_param('~d_group_max', 50) # maximal contour grouping distance in pixels
-        self.min_group_size_ = rclpy.get_param('~min_group_size', 4) # minimal number of contours for a group to be valid
+        # params = {"area_bounds": [390, 10000], "circ_bounds": [0.3, 0.99], "conv_bounds": [0.7, 1.0], "d_group_max": 50, "min_group_size": 4, "max_cam_depth": 20.0, "depth_scale_factor": 1.0, "depth_step": 2}
 
-        self.max_cam_depth_ = rclpy.get_param('~max_cam_depth', 20.0) # Maximum acceptable camera depth values
-        self.depth_scale_factor_ = rclpy.get_param('~depth_scale_factor', 1.0) # Scaling factor to make depth values in meters
-        self.depth_step_ = rclpy.get_param('~depth_step', 1)
-
-        self.bridge_ = CvBridge() # convert from ROS to OpenCV image
-
-    def depthCb(self, msg):
-        try:
-            # cv_image has pixel values in meters using the '32FC1' encoding
-            # You can check by printing cv_image.min() and cv_image.max()
-            cv_image = self.bridge_.imgmsg_to_cv2(msg, "32FC1")
-        except Exception as e:
-            rclpy.logerr("e")
-            return
-        
-        try:
-            # Get latest transform
-            t = self.tf_listener_.getLatestCommonTime(self.reference_frame_, msg.header.frame_id)
-            trans, rot = self.tf_listener_.lookupTransform(self.reference_frame_, msg.header.frame_id, t)
-        except Exception as e:
-            rclpy.logerr_throttle(1, e)
-            return
-        
-        try:            
-            # Pre-process depth image and extracts contours and their features
-            valid_detections, valid_depths, detections_img = self.preProcessing(cv_image)
-
-            # 3D projections
-            positions = self.depthTo3D(valid_detections, valid_depths)
-            if self.debug_:
-                rclpy.loginfo_throttle(1, '3D positions: {}'.format(positions))
-
-            # Transform positions to a reference frame
-            transform = tfs.concatenate_matrices(tfs.translation_matrix(trans), tfs.quaternion_matrix(rot))
-            pose_array = PoseArray()
-            pose_array = self.transformPositions(positions, self.reference_frame_, msg.header.frame_id, msg.header.stamp, transform)
-
-            if len(pose_array.poses) > 0:
-                self.detections_pub_.publish(pose_array)
-
-            if(self.pub_processed_images_):
-                ros_img = self.bridge_.cv2_to_imgmsg(detections_img)
-                self.img_pub_.publish(ros_img)
-                
-        except Exception as e:
-            rclpy.logerr(e)
-
-    def camInfoCb(self, msg):
-        # TODO : fill self.camera_info_ field
-        P = np.array(msg.P)
-        if len(P) == 12: # Sanity check
-            P = P.reshape((3,4))
-            self.camera_info_ = {'fx': P[0][0], 'fy': P[1][1], 'cx': P[0][2], 'cy': P[1][2]}
-
-    def transformPositions(self, positions, parent_frame, child_frame, tf_time):
-        """
-        @brief Converts 3D positions in the camera frame to a parent frame e.g /map
-        @param positions: List of 3D positions in the child frame (sensor e.g. camera)
-        @param parent_frame: Frame to transform positions to
-        @param child_frame: Current frame of positions
-        @param tf_time: Time at which positions were computed
-        @return pose_array: PoseArray of all transformed positions
-        """
-        pose_array = PoseArray()
-        pose_array.header.frame_id = parent_frame
-        pose_array.header.stamp = tf_time
-        
-        for pos in positions:
-            point = PointStamped()
-            point.header.frame_id = child_frame
-            point.header.stamp = tf_time
-            point.point.x = pos[0]
-            point.point.y = pos[1]
-            point.point.z = pos[2]
-            try:
-                p = self.tf_listener_.transformPoint(parent_frame,point)
-            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-                rclpy.logwarn_throttle(1, "[{0}] TF Error tranforming point from {1} to {2}".format(rclpy.get_name(),
-                                                                                        child_frame,
-                                                                                        parent_frame))
-                continue
-
-            pose = Pose()
-            pose.position.x = p.point.x
-            pose.position.y = p.point.y
-            pose.position.z = p.point.z
-            pose.orientation.w = 1.0
-
-            pose_array.poses.append(pose)
-
-        return pose_array
-
-    def transformPositions(self, positions, parent_frame, child_frame, tf_time, tr):
-        """
-        @brief Converts 3D positions in the camera frame to the parent_frame
-        @param positions: List of 3D positions in the child frame (sensor e.g. camera)
-        @param parent_frame: Frame to transform positions to
-        @param child_frame: Current frame of positions
-        @param tf_time: Time at which positions were computed
-        @param tr: Transform 4x4 matrix theat encodes rotation and translation
-        @return pose_array: PoseArray of all transformed positions
-        """
-        pose_array = PoseArray()
-        pose_array.header.frame_id = parent_frame
-        pose_array.header.stamp = tf_time
-        
-        for pos in positions:
-            point = PointStamped()
-            point.header.frame_id = child_frame
-            point.header.stamp = tf_time
-            point.point.x = pos[0]
-            point.point.y = pos[1]
-            point.point.z = pos[2]
-
-            # Construct homogenous position
-            pos_h = np.array([pos[0], pos[1], pos[2], 1.0])
-            # Apply transform
-            mapped_pos_h = np.dot(tr, pos_h)
-            # Extract 3D position
-            mapped_pos = mapped_pos_h[:3]
-            # try:
-            #     p = self.tf_listener_.transformPoint(parent_frame,point)
-            # except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-            #     rclpy.logwarn_throttle(1, "[{0}] TF Error tranforming point from {1} to {2}".format(rclpy.get_name(),
-            #                                                                             child_frame,
-            #                                                                             parent_frame))
-            #     continue
-
-            pose = Pose()
-            pose.position.x = mapped_pos[0]
-            pose.position.y = mapped_pos[1]
-            pose.position.z = mapped_pos[2]
-            pose.orientation.w = 1.0
-
-            pose_array.poses.append(pose)
-
-        return pose_array
+        self.area_bounds_ =  area_bounds #[100, 1e4] # in pixels
+        self.circ_bounds_ = circular_bounds # from 0 to 1
+        self.conv_bounds_ = convexity_bounds # from 0 to 1
+        self.d_group_max_ = d_group_max # maximal contour grouping distance in pixels
+        self.min_group_size_ = min_group_size # minimal number of contours for a group to be valid
+        self.max_cam_depth_ = max_cam_depth # Maximum acceptable camera depth values
+        self.depth_scale_factor_ = depth_scale_factor # Scaling factor to make depth values in meters
+        self.depth_step_ = depth_step
+        self.debug_ = debug
 
     def depthTo3D(self, detections, depths):
         """
@@ -236,7 +32,7 @@ class DroneDetector:
         """
         positions = []
         if self.camera_info_ is None:
-            rclpy.logerr("Camera intrinsic parameters are not available. Skipping 3D projections.")
+            print("Camera intrinsic parameters are not available. Skipping 3D projections.")
             return positions
 
         fx = self.camera_info_['fx']
@@ -256,7 +52,6 @@ class DroneDetector:
 
         return positions
 
-
     def preProcessing(self, img):
         """
         Pre-process input depth image.
@@ -273,7 +68,7 @@ class DroneDetector:
         min_depth_meter = img.min() * self.depth_scale_factor_
 
         if self.debug_:
-            rclpy.loginfo_throttle(1, 'Max depth= %s Min depth = %s', max_depth_meter, min_depth_meter)
+            print(1, 'Max depth= %s Min depth = %s', max_depth_meter, min_depth_meter)
 
         # Normalize depth values
         norm_img = cv2.normalize(img, None, 0, 1, cv2.NORM_MINMAX)
@@ -328,16 +123,16 @@ class DroneDetector:
         if len(contours_centers_list) > 0 :
             valid_detections, valid_depths, valid_radii = self.getValidDetections(contours_centers_list, contours_depths_list, contours_radii_list)
             if self.debug_:
-                rclpy.loginfo_throttle(1, 'Number of valid detections  = %s', len(valid_detections))
-                rclpy.loginfo_throttle(1, 'Centers of valid detections  = %s', valid_detections)
-                rclpy.loginfo_throttle(1, 'Depths of valid detections  = %s', valid_depths)
+                print(1, 'Number of valid detections  = %s', len(valid_detections))
+                print(1, 'Centers of valid detections  = %s', valid_detections)
+                print(1, 'Depths of valid detections  = %s', valid_depths)
         else:
             if self.debug_:
-                rclpy.logwarn_throttle(1, 'No contours found!')
+                print(1, 'No contours found!')
 
         dt = time.time() - t1
         if self.debug_:
-            rclpy.loginfo_throttle(1, 'Detection extraction time = %s', dt)
+            print(1, 'Detection extraction time = %s', dt)
 
             #cv2.imshow("Thresholded image window: depth = " + str(depth), thr_img)
 
@@ -534,14 +329,12 @@ class DroneDetector:
                 valid_contours_radius.append(radius)
             else:
                 if self.debug_:
-                    rclpy.logwarn_throttle(1, 'Area, circulariy, convexity contraints are not met')
-                    rclpy.logwarn_throttle(1, 'Area constraint is not satisfied: area=%s bounds=%s', area, self.area_bounds_ )
-                    rclpy.logwarn_throttle(1, 'Circularity constraint is not satisfied: circularity=%s bounds=%s', circularity, self.circ_bounds_ )
-                    rclpy.logwarn_throttle(1, 'Convexity constraint is not satisfied: convexity=%s bounds=%s', convexity, self.conv_bounds_ )
+                    print(1, 'Area, circulariy, convexity contraints are not met')
+                    print(1, 'Area constraint is not satisfied: area=%s bounds=%s', area, self.area_bounds_ )
+                    print(1, 'Circularity constraint is not satisfied: circularity=%s bounds=%s', circularity, self.circ_bounds_ )
+                    print(1, 'Convexity constraint is not satisfied: convexity=%s bounds=%s', convexity, self.conv_bounds_ )
 
         return valid_contours, valid_contours_depths, valid_contours_centers, valid_contours_radius
-
-
 
     def getValidContours(self,contours, features):
         """
@@ -615,11 +408,11 @@ class DroneDetector:
         t = thr
         # Sanity check on the threshold value
         if t < 0:
-            rclpy.logerr('Image threshold value is  %s < 0. Setting threshold to 0.', t)
+            print('Image threshold value is  %s < 0. Setting threshold to 0.', t)
             t = 0.0
 
         if t > 1:
-            rclpy.logerr('Image threshold value %s > 1. Setting threshold to 1.', t)
+            print('Image threshold value %s > 1. Setting threshold to 1.', t)
             t = 1.0
 
         _, threshold = cv2.threshold(img, t, 255, cv2.THRESH_BINARY_INV)
@@ -680,16 +473,3 @@ class DroneDetector:
         img = cv2.line(img, start_point, end_point, color, thickness)
 
         return img
-
-
-
-if __name__ == "__main__":
-    rclpy.init_node('drone_detector_node', anonymous=True)
-
-    detector = DroneDetector()
-
-    try:
-        rclpy.spin()
-    except KeyboardInterrupt:
-        print("Shutting down")
-    cv2.destroyAllWindows()

@@ -3,14 +3,21 @@
 <package format="3">
   <name>d2dtracker_drone_detector</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="user@todo.todo">user</maintainer>
-  <license>TODO: License declaration</license>
+  <description>Drone-to-drone perception pipeline</description>
+  <maintainer email="asmalbatati@hotmail.com">asmbatati</maintainer>
+  <license>Apache License 2.0</license>
 
-  <depend>rclcpp</depend>
   <depend>rclpy</depend>
+  <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>example_interfaces</depend>
+  <depend>image_transport</depend>
+  <depend>cv_bridge</depend>
+  <depend>sensor_msgs</depend>
+  <!-- <depend>OpenCV</depend> -->
+
+  <exec_depend>ros2launch</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

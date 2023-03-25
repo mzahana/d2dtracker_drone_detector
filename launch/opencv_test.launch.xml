@@ -1,0 +1,10 @@
+<!-- detection_launch.py -->
+<launch>
+
+  <!-- Launch the RealSense2 camera node -->
+  <include file="$(find realsense2_camera)/launch/rs_launch.py" />
+
+  <!-- Launch the depth camera node -->
+  <node pkg="d2dtracker_drone_detector" exec="detect" name="opencv_test" output="screen"/>
+
+</launch>
