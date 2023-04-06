@@ -25,47 +25,34 @@ class DepthCameraNode(Node):
         # @ Initiate the CV bridge
         self.cv_bridge_ = CvBridge()
 
-        # Read detection params
-        with open('/home/user/shared_volume/ros2_ws/src/d2dtracker_drone_detector/config/detection_param.yaml', 'r') as f:
-            params = yaml.load(f, Loader=SafeLoader)
+        # Declare ros params
+        self.declare_parameter('area_bounds', [390, 10000])
+        self.area_bounds_ = self.get_parameter('area_bounds').get_parameter_value().integer_array_value
 
-        self.declare_parameter('area_bounds', True)
-        self.area_bounds_ = self.get_parameter('area_bounds').get_parameter_value().bool_value
-        self.area_bounds_ =  params["area_bounds"] #[100, 1e4] # in pixels
+        self.declare_parameter('circular_bounds', [0.3, 0.99])
+        self.circ_bounds_ = self.get_parameter('circular_bounds').get_parameter_value().double_array_value
 
-        self.declare_parameter('circular_bounds', True)
-        self.circ_bounds_ = self.get_parameter('circular_bounds').get_parameter_value().bool_value
-        self.circ_bounds_ = params["circular_bounds"] # from 0 to 1
+        self.declare_parameter('convexity_bounds', [0.7, 1.0])
+        self.conv_bounds_ = self.get_parameter('convexity_bounds').get_parameter_value().double_array_value
 
-        self.declare_parameter('convexity_bounds', True)
-        self.conv_bounds_ = self.get_parameter('convexity_bounds').get_parameter_value().bool_value
-        self.conv_bounds_ = params["convexity_bounds"] # from 0 to 1
+        self.declare_parameter('d_group_max', 50)
+        self.d_group_max_ = self.get_parameter('d_group_max').get_parameter_value().integer_value
 
-        self.declare_parameter('d_group_max', True)
-        self.d_group_max_ = self.get_parameter('d_group_max').get_parameter_value().bool_value
-        self.d_group_max_ = params["d_group_max"] # maximal contour grouping distance in pixels
+        self.declare_parameter('min_group_size', 4)
+        self.min_group_size_ = self.get_parameter('min_group_size').get_parameter_value().integer_value
 
-        self.declare_parameter('min_group_size', True)
-        self.min_group_size_ = self.get_parameter('min_group_size').get_parameter_value().bool_value
-        self.min_group_size_ = params["min_group_size"] # minimal number of contours for a group to be valid
+        self.declare_parameter('max_cam_depth', 20.0)
+        self.max_cam_depth_ = self.get_parameter('max_cam_depth').get_parameter_value().double_value
 
-        self.declare_parameter('max_cam_depth', True)
-        self.max_cam_depth_ = self.get_parameter('max_cam_depth').get_parameter_value().bool_value
-        self.max_cam_depth_ = params["max_cam_depth"] # Maximum acceptable camera depth values
+        self.declare_parameter('depth_scale_factor', 1.0)
+        self.depth_scale_factor_ = self.get_parameter('depth_scale_factor').get_parameter_value().integer_value
 
-        self.declare_parameter('depth_scale_factor', True)
-        self.depth_scale_factor_ = self.get_parameter('depth_scale_factor').get_parameter_value().bool_value
-        self.depth_scale_factor_ = params["depth_scale_factor"] # Scaling factor to make depth values in meters
-
-        self.declare_parameter('depth_step', True)
-        self.depth_step_ = self.get_parameter('depth_step').get_parameter_value().bool_value
-        self.depth_step_ = params["depth_step"]
+        self.declare_parameter('depth_step', 2)
+        self.depth_step_ = self.get_parameter('depth_step').get_parameter_value().integer_value
 
         self.declare_parameter('debug', True)
         self.debug_ = self.get_parameter('debug').get_parameter_value().bool_value
-        self.debug_ = params["debug"]
 
-        # Declare ros params
         self.declare_parameter('show_debug_images', True)
         self.show_debug_images_ = self.get_parameter('show_debug_images').get_parameter_value().bool_value
 
