@@ -26,12 +26,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'service = d2dtracker_drone_detector.service_member_function:main',
-            'client = d2dtracker_drone_detector.client_member_function:main',
-            'img_publisher = d2dtracker_drone_detector.basic_image_publisher:main',
-            'img_subscriber = d2dtracker_drone_detector.basic_image_subscriber:main',
-            'detection = d2dtracker_drone_detector.detection:main',
-            'detect = d2dtracker_drone_detector.detection_node:main',
+            'detection_node = d2dtracker_drone_detector.detection_node:main',
         ],
     },
 )
