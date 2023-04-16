@@ -10,9 +10,6 @@ import tf2_py
 from tf2_ros import TransformStamped, TransformListener, LookupTransform
 import tf2_ros.buffer
 from geometry_msgs.msg import PoseArray, PointStamped, Pose, TransformStamped
-import cv2
-import yaml
-from yaml.loader import SafeLoader
 import tf_transformations
 from tf_transformations import transforms3d as tfs
 import tf2_geometry_msgs.tf2_geometry_msgs
@@ -25,41 +22,36 @@ class DepthCameraNode(Node):
         # @ Initiate the CV bridge
         self.cv_bridge_ = CvBridge()
 
+        self.declare_parameters(
+            namespace='',
+            parameters=[
+                ('area_bounds',[390,1000]),
+                ('circular_bounds',[0.3, 0.99]),
+                ('convexity_bounds', [0.7,0.1]),
+                ('d_group_max', 50),
+                ('min_group_size',4),
+                ('max_cam_depth', 20.0),
+                ('depth_scale_factor',1.0),
+                ('depth_step', 2.0),
+                ('debug', True),
+                ('show_debug_images', True),
+                ('publish_processed_images', True),
+                ('reference_frame', 'map'),
+            ]
+        )
+
         # Declare ros params
-        self.declare_parameter('area_bounds', [390, 10000])
         self.area_bounds_ = self.get_parameter('area_bounds').get_parameter_value().integer_array_value
-
-        self.declare_parameter('circular_bounds', [0.3, 0.99])
         self.circ_bounds_ = self.get_parameter('circular_bounds').get_parameter_value().double_array_value
-
-        self.declare_parameter('convexity_bounds', [0.7, 1.0])
         self.conv_bounds_ = self.get_parameter('convexity_bounds').get_parameter_value().double_array_value
-
-        self.declare_parameter('d_group_max', 50)
         self.d_group_max_ = self.get_parameter('d_group_max').get_parameter_value().integer_value
-
-        self.declare_parameter('min_group_size', 4)
         self.min_group_size_ = self.get_parameter('min_group_size').get_parameter_value().integer_value
-
-        self.declare_parameter('max_cam_depth', 20.0)
         self.max_cam_depth_ = self.get_parameter('max_cam_depth').get_parameter_value().double_value
-
-        self.declare_parameter('depth_scale_factor', 1.0)
         self.depth_scale_factor_ = self.get_parameter('depth_scale_factor').get_parameter_value().integer_value
-
-        self.declare_parameter('depth_step', 2)
         self.depth_step_ = self.get_parameter('depth_step').get_parameter_value().integer_value
-
-        self.declare_parameter('debug', True)
         self.debug_ = self.get_parameter('debug').get_parameter_value().bool_value
-
-        self.declare_parameter('show_debug_images', True)
         self.show_debug_images_ = self.get_parameter('show_debug_images').get_parameter_value().bool_value
-
-        self.declare_parameter('publish_processed_images', True)
         self.pub_processed_images_ =self.get_parameter('publish_processed_images').get_parameter_value().bool_value
-
-        self.declare_parameter('reference_frame', 'map')
         self.reference_frame_ =self.get_parameter('reference_frame').get_parameter_value().string_value
 
         # Initiate class member 'detector'
@@ -67,13 +59,11 @@ class DepthCameraNode(Node):
 
         # Subscribe to image topic
         self.image_sub_ = self.create_subscription(Image,"interceptor/depth_image",self.imageCallback,10)
-
         # Subscribe to camera info topic
         self.caminfo_sub_ = self.create_subscription(CameraInfo, 'interceptor/camera_info', self.caminfoCallback, 10)
 
         # Publish detections positions
         self.detections_pub_ = self.create_publisher(PoseArray,'drone_detections',10)
-
         # Publish image with overlayed detections
         self.img_pub_ = self.create_publisher( Image,'detections_image',10)
 
@@ -92,6 +82,7 @@ class DepthCameraNode(Node):
         try:
             # Get latest transform
             # t = self.get_clock().now() #self.tf_buffer_.getLatestCommonTime(self.reference_frame_, msg.header.frame_id)
+            # @todo FIX ME
             trans, rot = self.tf_buffer_.lookup_transform(self.reference_frame_, msg.header.frame_id, 0)
         except Exception as e:
             self.get_logger().error("get transform error {}".format(e))
@@ -101,29 +92,36 @@ class DepthCameraNode(Node):
         try:            
             # Pre-process depth image and extracts contours and their features
             valid_detections, valid_depths, detections_img = self.detector_.preProcessing(cv_image)
+        except Exception as e:
+            self.get_logger().error("Error in preProcessing: {}".format(e))
+            return
 
+        try:
             # 3D projections
             positions = self.detector_.depthTo3D(valid_detections, valid_depths)
             if self.debug_:
-                self.get_logger().log("3D positions: {}".format(positions))
-                # rospy.loginfo_throttle(1, '3D positions: {}'.format(positions)) #find ros2 way to log periodically
-                pass
+                self.get_logger().info("3D positions: {}".format(positions), throttle_duration_sec=1)
+        except Exception as e:
+            self.get_logger().error("Error in depthTo3D: {}".format(e))
+            return
 
+        try:   
             # Transform positions to a reference frame
             transform = tf_transformations.concatenate_matrices(tf_transformations.translation_matrix(trans), tf_transformations.quaternion_matrix(rot))
             tf2_ros.LookupTransform
             pose_array = PoseArray()
             pose_array = self.transformPositions(positions, self.reference_frame_, msg.header.frame_id, msg.header.stamp, transform)
-
-            if len(pose_array.poses) > 0:
-                self.detections_pub_.publish(pose_array)
-
-            if(self.pub_processed_images_):
-                ros_img = self.cv_bridge_.cv2_to_imgmsg(detections_img)
-                self.img_pub_.publish(ros_img)
-                
         except Exception as e:
-            self.get_logger().error("pre processing error {}".format(e))
+            self.get_logger().error("Error in transforming positions: {}".format(e))
+            return
+
+        if len(pose_array.poses) > 0:
+            self.detections_pub_.publish(pose_array)
+
+        if(self.pub_processed_images_):
+            ros_img = self.cv_bridge_.cv2_to_imgmsg(detections_img)
+            self.img_pub_.publish(ros_img)
+                
 
     def caminfoCallback(self,msg: CameraInfo):
         # TODO : fill self.camera_info_ field
