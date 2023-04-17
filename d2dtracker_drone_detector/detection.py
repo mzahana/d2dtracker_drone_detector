@@ -5,7 +5,15 @@ import math
 import time
 
 class DroneDetector:
-    def __init__(self,area_bounds,circular_bounds,convexity_bounds,d_group_max,min_group_size,max_cam_depth,depth_scale_factor,depth_step,debug):
+    def __init__(self,area_bounds: list[int],
+                 circular_bounds: list[float],
+                 convexity_bounds: list[float],
+                 d_group_max: int,
+                 min_group_size: int,
+                 max_cam_depth: float,
+                 depth_scale_factor: float,
+                 depth_step: float,
+                 debug: bool):
 
         self.camera_info_ = None
         """

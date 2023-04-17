@@ -56,7 +56,17 @@ class DepthCameraNode(Node):
         self.reference_frame_ =self.get_parameter('reference_frame').get_parameter_value().string_value
 
         # Initiate class member 'detector'
-        self.detector_= DroneDetector(self.area_bounds_,self.circ_bounds_,self.conv_bounds_,self.d_group_max_,self.min_group_size_,self.max_cam_depth_,self.depth_scale_factor_,self.depth_step_ ,self.debug_)
+        # TODO group all parameters into a dictionary before passing it to DroneDetector()
+        self.detector_= DroneDetector(self.area_bounds_,
+                                      self.circ_bounds_,
+                                      self.conv_bounds_,
+                                      self.d_group_max_,
+                                      self.min_group_size_,
+                                      self.max_cam_depth_,
+                                      self.depth_scale_factor_,
+                                      self.depth_step_ ,
+                                      self.debug_
+                                      )
 
         # Subscribe to image topic
         self.image_sub_ = self.create_subscription(Image,"interceptor/depth_image",self.imageCallback,10)
