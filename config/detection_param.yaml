@@ -1,8 +1,6 @@
 /detection_node:
   ros__parameters:    
     debug: True
-    img_topic: /interceptor/depth_camera/depth/image_raw
-    camInfo_topic: /interceptor/depth_camera/depth/camera_info
     show_debug_images: False
     publish_processed_images: True
     reference_frame: interceptor_odom
@@ -13,5 +11,5 @@
     min_group_size: 4
     max_cam_depth: 20.0
     depth_scale_factor: 1.0
-    depth_step: 2
+    depth_step: 2.0
     output: screen

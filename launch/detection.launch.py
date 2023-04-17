@@ -14,7 +14,6 @@ def generate_launch_description():
 
     config = os.path.join(
         get_package_share_directory('d2dtracker_drone_detector'),
-        'config',
         'detection_param.yaml'
     )
     
