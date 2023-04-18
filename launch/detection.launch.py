@@ -10,6 +10,7 @@ def generate_launch_description():
     # Add argument for the path of the yaml file
     detection_yaml = LaunchConfiguration('detection_yaml')
     depth_topic = LaunchConfiguration('depth_topic')
+    caminfo_topic = LaunchConfiguration('caminfo_topic')
     namespace = LaunchConfiguration('namespace')
 
     config = os.path.join(
@@ -27,6 +28,11 @@ def generate_launch_description():
         default_value='interceptor/depth_image'
     )
 
+    caminfo_topic_launch_arg = DeclareLaunchArgument(
+        'caminfo_topic',
+        default_value='interceptor/camera_info'
+    )
+
     namespace_launch_arg = DeclareLaunchArgument(
         'namespace',
         default_value=''
@@ -40,13 +46,16 @@ def generate_launch_description():
         namespace=namespace,
         output='screen',
         parameters=[detection_yaml],
-        remappings=[('interceptor/depth_image', depth_topic)]
+        remappings=[('interceptor/depth_image', depth_topic),
+                    ('interceptor/camera_info', caminfo_topic)
+                    ]
     )
 
     ld = LaunchDescription()
 
     ld.add_action(detection_yaml_launch_arg)
     ld.add_action(depth_topic_launch_arg)
+    ld.add_action(caminfo_topic_launch_arg)
     ld.add_action(namespace_launch_arg)
     ld.add_action(detection_node)
 

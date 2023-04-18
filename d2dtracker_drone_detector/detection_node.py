@@ -91,11 +91,13 @@ class DepthCameraNode(Node):
             self.get_logger().error("ros_to_cv conversion error {}".format(e))
             return
         
+        # self.get_logger().info("Max depth = {}. Min depth = {}".format( cv_image.max(), cv_image.min()))
+        
         try:
             transform = self.tf_buffer_.lookup_transform(
                 self.reference_frame_,
                 msg.header.frame_id,
-                msg.header.stamp,
+                rclpy.time.Time(),
                 timeout=rclpy.duration.Duration(seconds=1.0))
         except TransformException as ex:
             self.get_logger().error(
