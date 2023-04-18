@@ -5,7 +5,15 @@ import math
 import time
 
 class DroneDetector:
-    def __init__(self,area_bounds,circular_bounds,convexity_bounds,d_group_max,min_group_size,max_cam_depth,depth_scale_factor,depth_step,debug):
+    def __init__(self,area_bounds: list[int],
+                 circular_bounds: list[float],
+                 convexity_bounds: list[float],
+                 d_group_max: int,
+                 min_group_size: int,
+                 max_cam_depth: float,
+                 depth_scale_factor: float,
+                 depth_step: float,
+                 debug: bool):
 
         self.camera_info_ = None
         """
@@ -63,12 +71,15 @@ class DroneDetector:
         @return contours_centers_list: List of each contour center, for different thresholded images.
         """
         t1 = time.time()
+        if self.debug_:
+            print("[preProcessing] Type of img:", type(img))
         img[np.isnan(img)] = self.max_cam_depth_ # Remove NaN values with the maximum distance provided by the camera
+        img[np.isinf(img)] = self.max_cam_depth_
         max_depth_meter = img.max() * self.depth_scale_factor_
         min_depth_meter = img.min() * self.depth_scale_factor_
 
         if self.debug_:
-            print(1, 'Max depth= %s Min depth = %s', max_depth_meter, min_depth_meter)
+            print( '[preProcessing] Max depth= {} Min depth = {}'.format( max_depth_meter, min_depth_meter) )
 
         # Normalize depth values
         norm_img = cv2.normalize(img, None, 0, 1, cv2.NORM_MINMAX)
@@ -87,10 +98,11 @@ class DroneDetector:
         # Loop through list of depth thresholds [ meters]
         min_threshold = int(min_depth_meter)+1
         max_threshold = int(max_depth_meter)
-        depth_range = range(min_threshold, max_threshold, self.depth_step_)
+        # depth_range = range(min_threshold, max_threshold, self.depth_step_)
+        depth_range = np.linspace(min_depth_meter+1.0, max_depth_meter, math.floor((max_depth_meter-min_depth_meter+1/self.depth_step_)))
         for depth in depth_range:
             # convert depth in meters to normalized value for OpenCV processing
-            normalized_d = self.linearMap(float(depth), [min_depth_meter, max_depth_meter], [0., 1.])
+            normalized_d = self.linearMap(depth, [min_depth_meter, max_depth_meter], [0., 1.])
 
             # Apply thresholding to the eroded image
             thr_img = self.thresholding(eroded_img, normalized_d)
@@ -123,16 +135,16 @@ class DroneDetector:
         if len(contours_centers_list) > 0 :
             valid_detections, valid_depths, valid_radii = self.getValidDetections(contours_centers_list, contours_depths_list, contours_radii_list)
             if self.debug_:
-                print(1, 'Number of valid detections  = %s', len(valid_detections))
-                print(1, 'Centers of valid detections  = %s', valid_detections)
-                print(1, 'Depths of valid detections  = %s', valid_depths)
+                print('[preProcessing] Number of valid detections  = ', len(valid_detections))
+                print('[preProcessing] Centers of valid detections  = ', valid_detections)
+                print('[preProcessing] Depths of valid detections  = ', valid_depths)
         else:
             if self.debug_:
-                print(1, 'No contours found!')
+                print('[preProcessing] No contours found!')
 
         dt = time.time() - t1
         if self.debug_:
-            print(1, 'Detection extraction time = %s', dt)
+            print('[preProcessing] Detection extraction time = ', dt)
 
             #cv2.imshow("Thresholded image window: depth = " + str(depth), thr_img)
 
@@ -329,10 +341,10 @@ class DroneDetector:
                 valid_contours_radius.append(radius)
             else:
                 if self.debug_:
-                    print(1, 'Area, circulariy, convexity contraints are not met')
-                    print(1, 'Area constraint is not satisfied: area=%s bounds=%s', area, self.area_bounds_ )
-                    print(1, 'Circularity constraint is not satisfied: circularity=%s bounds=%s', circularity, self.circ_bounds_ )
-                    print(1, 'Convexity constraint is not satisfied: convexity=%s bounds=%s', convexity, self.conv_bounds_ )
+                    print('[getValidContours2] Area, circulariy, convexity contraints are not met')
+                    print(f'[getValidContours2] Area constraint is not satisfied: area={area} bounds={self.area_bounds_}' )
+                    print(f'Circularity constraint is not satisfied: circularity={circularity} bounds={self.circ_bounds_}' )
+                    print(f'Convexity constraint is not satisfied: convexity={convexity} bounds={self.conv_bounds_}')
 
         return valid_contours, valid_contours_depths, valid_contours_centers, valid_contours_radius
 
@@ -408,11 +420,11 @@ class DroneDetector:
         t = thr
         # Sanity check on the threshold value
         if t < 0:
-            print('Image threshold value is  %s < 0. Setting threshold to 0.', t)
+            print(f'Image threshold value is  {t} < 0. Setting threshold to 0.')
             t = 0.0
 
         if t > 1:
-            print('Image threshold value %s > 1. Setting threshold to 1.', t)
+            print(f'Image threshold value {t} > 1. Setting threshold to 1.')
             t = 1.0
 
         _, threshold = cv2.threshold(img, t, 255, cv2.THRESH_BINARY_INV)

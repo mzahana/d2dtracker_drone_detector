@@ -2,10 +2,10 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>d2dtracker_drone_detector</name>
-  <version>0.0.0</version>
+  <version>0.1.0</version>
   <description>Drone-to-drone perception pipeline</description>
-  <maintainer email="asmalbatati@hotmail.com">asmbatati</maintainer>
-  <license>Apache License 2.0</license>
+  <maintainer email="mohamedashraf123@gmail.com">Mohamed Abdelkader</maintainer>
+  <license>BSD</license>
 
   <depend>rclpy</depend>
   <depend>rclcpp</depend>
@@ -15,6 +15,9 @@
   <depend>image_transport</depend>
   <depend>cv_bridge</depend>
   <depend>sensor_msgs</depend>
+  <depend>tf2_ros_py</depend>
+  <depend>tf2_geometry_msgs</depend>
+  
   <!-- <depend>OpenCV</depend> -->
 
   <exec_depend>ros2launch</exec_depend>

@@ -16,13 +16,14 @@ setup(
         # ('share/' + package_name, ['config.yaml']),
         (os.path.join('share', package_name), glob('launch/*.launch.[pxy][yma]*')),
         (os.path.join('share', package_name), glob('launch/*.[pxy][yma]*')),
+        (os.path.join('share', package_name), glob('config/*.*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='asmbatati',
-    maintainer_email='asmalbatati@hotmail.com',
+    maintainer='Mohamed Abdelkader',
+    maintainer_email='mohamedashraf123@gmail.com',
     description='Drone-to-drone perception pipeline',
-    license='Apache License 2.0',
+    license='BSD',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
