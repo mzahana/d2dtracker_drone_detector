@@ -74,7 +74,7 @@ class DepthCameraNode(Node):
         self.caminfo_sub_ = self.create_subscription(CameraInfo, 'interceptor/camera_info', self.caminfoCallback, 10)
 
         # Publish detections positions
-        self.detections_pub_ = self.create_publisher(PoseArray,'drone_detections',10)
+        self.detections_pub_ = self.create_publisher(PoseArray,'detections_poses',10)
         # Publish image with overlayed detections
         self.img_pub_ = self.create_publisher( Image,'detections_image',10)
 
