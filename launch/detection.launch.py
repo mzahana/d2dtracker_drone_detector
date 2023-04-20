@@ -11,7 +11,8 @@ def generate_launch_description():
     detection_yaml = LaunchConfiguration('detection_yaml')
     depth_topic = LaunchConfiguration('depth_topic')
     caminfo_topic = LaunchConfiguration('caminfo_topic')
-    namespace = LaunchConfiguration('namespace')
+    detections_topic = LaunchConfiguration('detections_topic')
+    namespace = LaunchConfiguration('detector_ns')
 
     config = os.path.join(
         get_package_share_directory('d2dtracker_drone_detector'),
@@ -33,8 +34,13 @@ def generate_launch_description():
         default_value='interceptor/camera_info'
     )
 
+    detections_topic_launch_arg = DeclareLaunchArgument(
+        'detections_topic',
+        default_value='detections_poses'
+    )
+
     namespace_launch_arg = DeclareLaunchArgument(
-        'namespace',
+        'detector_ns',
         default_value=''
     )
 
@@ -47,7 +53,8 @@ def generate_launch_description():
         output='screen',
         parameters=[detection_yaml],
         remappings=[('interceptor/depth_image', depth_topic),
-                    ('interceptor/camera_info', caminfo_topic)
+                    ('interceptor/camera_info', caminfo_topic),
+                    ('detections_poses', detections_topic)
                     ]
     )
 
@@ -57,6 +64,7 @@ def generate_launch_description():
     ld.add_action(depth_topic_launch_arg)
     ld.add_action(caminfo_topic_launch_arg)
     ld.add_action(namespace_launch_arg)
+    ld.add_action(detections_topic_launch_arg)
     ld.add_action(detection_node)
 
     return ld
