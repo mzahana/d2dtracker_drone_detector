@@ -138,9 +138,14 @@ class DepthCameraNode(Node):
     def caminfoCallback(self,msg: CameraInfo):
         # TODO : fill self.camera_info_ field
         P = np.array(msg.p)
-        if len(P) == 12: # Sanity check
-            P = P.reshape((3,4))
-            self.detector_.camera_info_ = {'fx': P[0][0], 'fy': P[1][1], 'cx': P[0][2], 'cy': P[1][2]}
+        K = np.array(msg.k)
+        # if len(P) == 12: # Sanity check
+        #     P = P.reshape((3,4))
+        #     self.detector_.camera_info_ = {'fx': P[0][0], 'fy': P[1][1], 'cx': P[0][2], 'cy': P[1][2]}
+
+        if len(K) == 9: # Sanity check
+            K = K.reshape((3,3))
+            self.detector_.camera_info_ = {'fx': K[0][0], 'fy': K[1][1], 'cx': K[0][2], 'cy': K[1][2]}
 
     def transformPositions(self, positions: list, parent_frame: str, child_frame: str, tf_time, tr: TransformStamped) -> PoseArray:
         """
