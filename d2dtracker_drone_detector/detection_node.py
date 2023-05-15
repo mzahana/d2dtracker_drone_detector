@@ -122,7 +122,9 @@ class DepthCameraNode(Node):
 
         try:
             pose_array = PoseArray()
-            pose_array = self.transformPositions(positions, self.reference_frame_, msg.header.frame_id, msg.header.stamp, transform)
+            pose_array = self.transformPositions(positions, self.reference_frame_, 
+                                                 msg.header.frame_id, 
+                                                 msg.header.stamp, transform)
         except Exception as e:
             self.get_logger().error("Error in transforming positions: {}".format(e))
             return
