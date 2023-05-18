@@ -28,6 +28,7 @@ setup(
     entry_points={
         'console_scripts': [
             'detection_node = d2dtracker_drone_detector.detection_node:main',
+            'yolo2pose_node = d2dtracker_drone_detector.yolo2pose_node:main',
         ],
     },
 )
