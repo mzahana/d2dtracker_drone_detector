@@ -237,7 +237,7 @@ class DroneDetector:
                 if len(group) >= self.min_group_size_ :
                     np_g = np.array(group)
                     valid_center = sum(np_g) / len(group)
-                    valid_depth = sum(np.array(group_depths)) / len(group_depths)
+                    valid_depth = min(np.array(group_depths)) #sum(np.array(group_depths)) / len(group_depths)
                     valid_radius = sum(np.array(group_radii)) / len(group_radii)
                     detections.append(valid_center)
                     detections_depths.append(valid_depth)

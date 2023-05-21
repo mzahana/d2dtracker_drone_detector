@@ -139,7 +139,10 @@ class Yolo2PoseNode(Node):
             h = int(obj.bbox.size_y)
             roi = cv_image[y:y+h, x:x+w]
             # Minimum depth value in the region of interest rio
-            min_depth = min_value = np.min(roi)
+            try:
+                min_depth = min_value = np.min(roi)
+            except:
+                continue
 
             # bbx center
             pixel = [x,y]
