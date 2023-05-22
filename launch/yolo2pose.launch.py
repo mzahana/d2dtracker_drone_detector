@@ -53,7 +53,7 @@ def generate_launch_description():
     detection_node = Node(
         package='d2dtracker_drone_detector',
         executable='yolo2pose_node',
-        name='detection_node',
+        name='yolo2pose_node',
         namespace=namespace,
         output='screen',
         parameters=[{'debug': debug}, 
