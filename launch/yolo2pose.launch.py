@@ -49,7 +49,7 @@ def generate_launch_description():
         default_value='world'
     )
 
-    # Detection node
+    # yolo2pose_node node
     detection_node = Node(
         package='d2dtracker_drone_detector',
         executable='yolo2pose_node',

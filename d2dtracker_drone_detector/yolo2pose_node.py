@@ -21,7 +21,9 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
-from vision_msgs.msg import Detection2DArray, Detection2D
+# from vision_msgs.msg import Detection2DArray, Detection2D
+from yolov8_msgs.msg import Detection
+from yolov8_msgs.msg import DetectionArray
 
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
@@ -56,7 +58,7 @@ class Yolo2PoseNode(Node):
 
         # Camera intrinsics
         self.camera_info_ = None
-        self.yolo_detections_msg_ = Detection2DArray()
+        self.yolo_detections_msg_ = DetectionArray()
         self.detection_pose_msg_ = PoseArray()
 
         # Last detection time stamp in seconds
@@ -65,7 +67,7 @@ class Yolo2PoseNode(Node):
         # Subscribers
         self.image_sub_ = self.create_subscription(Image,"interceptor/depth_image",self.depthCallback, qos_profile_sensor_data)
         self.caminfo_sub_ = self.create_subscription(CameraInfo, 'interceptor/camera_info', self.caminfoCallback, 10)
-        self.detections_sub_ = self.create_subscription(Detection2DArray, 'detections', self.detectionsCallback, 10)
+        self.detections_sub_ = self.create_subscription(DetectionArray, 'detections', self.detectionsCallback, 10)
 
         # Publishers
         self.poses_pub_ = self.create_publisher( PoseArray,'yolo_poses',10)
@@ -122,7 +124,7 @@ class Yolo2PoseNode(Node):
             self.get_logger().error("[Yolo2PoseNode::depthCallback] Image to CvImg conversion error {}".format(e))
             return
 
-        obj = Detection2D()
+        obj = Detection()
         # obj.bbox.center.position.x
         # obj.bbox.center.position.y
         # obj.bbox.size_x
@@ -133,15 +135,17 @@ class Yolo2PoseNode(Node):
         poses_msg.header.frame_id = self.reference_frame_
 
         for obj in yolo_msg.detections:
-            x = int(obj.bbox.center.position.x - obj.bbox.size_x/2)
-            y = int(obj.bbox.center.position.y - obj.bbox.size_y/2)
-            w = int(obj.bbox.size_x)
-            h = int(obj.bbox.size_y)
+            x = int(obj.bbox.center.position.x - obj.bbox.size.x/2)
+            y = int(obj.bbox.center.position.y - obj.bbox.size.y/2)
+            w = int(obj.bbox.size.x)
+            h = int(obj.bbox.size.y)
             roi = cv_image[y:y+h, x:x+w]
             # Minimum depth value in the region of interest rio
             try:
                 min_depth = min_value = np.min(roi)
-            except:
+            except Exception as e:
+                if self.debug_:
+                    self.get_logger().error("[Yolo2PoseNode::depthCallback] Could not compute minimum depth {}".format(e))
                 continue
 
             # bbx center
@@ -153,6 +157,10 @@ class Yolo2PoseNode(Node):
 
         if(len(poses_msg.poses)>0):
             self.poses_pub_.publish(poses_msg)
+        else:
+            if self.debug_:
+                self.get_logger().warn("[Yolo2PoseNode::depthCallback] No poses to publish")
+
         
 
     def caminfoCallback(self,msg: CameraInfo):
@@ -167,7 +175,7 @@ class Yolo2PoseNode(Node):
             K = K.reshape((3,3))
             self.camera_info_ = {'fx': K[0][0], 'fy': K[1][1], 'cx': K[0][2], 'cy': K[1][2]}
 
-    def detectionsCallback(self, msg: Detection2DArray):
+    def detectionsCallback(self, msg: DetectionArray):
         self.yolo_detections_msg_ = msg
 
     def depthToPoseMsg(self, pixel, depth):
