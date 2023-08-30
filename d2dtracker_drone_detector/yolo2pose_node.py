@@ -65,7 +65,8 @@ class Yolo2PoseNode(Node):
         self.last_detection_t_ = 0.0
 
         # Subscribers
-        self.image_sub_ = self.create_subscription(Image,"interceptor/depth_image",self.depthCallback, qos_profile_sensor_data)
+        # self.image_sub_ = self.create_subscription(Image,"interceptor/depth_image",self.depthCallback, qos_profile_sensor_data)
+        self.image_sub_ = self.create_subscription(Image,"interceptor/depth_image",self.depthCallback, 10)
         self.caminfo_sub_ = self.create_subscription(CameraInfo, 'interceptor/camera_info', self.caminfoCallback, 10)
         self.detections_sub_ = self.create_subscription(DetectionArray, 'detections', self.detectionsCallback, 10)
 
@@ -77,6 +78,7 @@ class Yolo2PoseNode(Node):
         self.tf_listener_ = TransformListener(self.tf_buffer_,self)
 
     def depthCallback(self, msg: Image):
+
         # Check if we have detections at all
         yolo_msg = self.yolo_detections_msg_
         if len(yolo_msg.detections) < 1:
