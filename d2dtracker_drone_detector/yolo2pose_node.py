@@ -91,6 +91,7 @@ class Yolo2PoseNode(Node):
                 self.get_logger().warn("[Yolo2PoseNode::depthCallback] camera_info is None. Return")
             return
         
+        # Get the TF from the world/map to the cam frame
         try:
             transform = self.tf_buffer_.lookup_transform(
                 self.reference_frame_,
