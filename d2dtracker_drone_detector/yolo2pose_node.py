@@ -105,6 +105,10 @@ class Yolo2PoseNode(Node):
         self.declare_parameter('use_kf', True)
         self.declare_parameter('depth_roi', 5.0)
         self.declare_parameter('std_range', 5.0)
+        self.declare_parameter('modified_bbx_w', 0.9)
+        self.declare_parameter('modified_bbx_h', 0.9)
+        self.declare_parameter('min_depth_range', 2.0)
+        self.declare_parameter('max_depth_range', 10.0)
     def depthCallback(self, msg: Image):
         use_yolo = self.get_parameter('use_yolo').value
         use_kf = self.get_parameter('use_kf').value
@@ -174,7 +178,10 @@ class Yolo2PoseNode(Node):
             self.get_logger().error(
                 f'[Yolo2PoseNode::depthCallback] Could not transform {self.reference_frame_} to {msg.header.frame_id}: {ex}')
             return
-        
+        modified_bbx_w = self.get_parameter('modified_bbx_w').value
+        modified_bbx_h = self.get_parameter('modified_bbx_h').value
+        min_depth_range = self.get_parameter('min_depth_range').value
+        max_depth_range = self.get_parameter('max_depth_range').value
         #depth_image_type = cv_image.dtype
         #print("Depth Image Type:", depth_image_type)
         obj = Detection()
@@ -194,12 +201,12 @@ class Yolo2PoseNode(Node):
 
             x_modified = int(obj.bbox.center.position.x)
             y_modified = int(obj.bbox.center.position.y)
-            w_modified = int(0.9 * w)
-            h_modified = int(0.9 * h)
+            w_modified = int(modified_bbx_w * w)
+            h_modified = int(modified_bbx_h * h)
             modified_roi = cv_image[y_modified:y_modified + h_modified, x_modified:x_modified + w_modified]
             # roi_uint8 = (modified_roi * 255).astype(np.uint8)
             valid_values = modified_roi[~np.isnan(modified_roi)]
-            valid_values = valid_values[np.logical_and(0 <= valid_values, valid_values <= 10)]
+            valid_values = valid_values[np.logical_and(min_depth_range <= valid_values, valid_values <= max_depth_range)]
             if len(valid_values) > 0:
                 avg_depth = np.mean(valid_values)
             # +self.get_logger().info(f"[Yolo2PoseNode::yolo_process_pose] depth_at_centroid: {avg_depth}")
