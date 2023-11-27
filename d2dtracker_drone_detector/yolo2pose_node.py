@@ -49,7 +49,6 @@ class Yolo2PoseNode(Node):
     def __init__(self):
         # Initiate the node
         super().__init__("yolo2pose_node")
-
         # Declare parameters
         self.declare_parameters(
             namespace='',
@@ -82,7 +81,8 @@ class Yolo2PoseNode(Node):
         # Last detection time stamp in seconds
         self.last_detection_t_ = 0.0
         self.last_kf_measurments_t_ = 0.0
-
+        # self.depth_roi_ = 5
+        # self.depth_range_ = 5
         # Ref: https://docs.ros.org/en/humble/Tutorials/Intermediate/Tf2/Writing-A-Tf2-Listener-Py.html
         self.tf_buffer_ = Buffer()
         self.tf_listener_ = TransformListener(self.tf_buffer_,self)
@@ -103,7 +103,8 @@ class Yolo2PoseNode(Node):
 
         self.declare_parameter('use_yolo', True)
         self.declare_parameter('use_kf', True)
-
+        self.declare_parameter('depth_roi', 5.0)
+        self.declare_parameter('std_range', 5.0)
     def depthCallback(self, msg: Image):
         use_yolo = self.get_parameter('use_yolo').value
         use_kf = self.get_parameter('use_kf').value
@@ -225,8 +226,9 @@ class Yolo2PoseNode(Node):
 
     def kf_process_pose(self, msg: Image):
         kf_msg = copy.deepcopy(self.latest_kf_tracks_msg_)
-
-        nearest_depth_value = 0.0
+        # depth_roi_ = self.get_parameter('depth_roi').value
+        depth_roi_ = self.get_parameter('depth_roi').value
+        nearest_depth_value = None
         min_distance = float('inf')
         kf_transformed_pose_msg = Pose()
         nearest_centroid_x = 0.0 
@@ -246,7 +248,7 @@ class Yolo2PoseNode(Node):
         poses_msg_kf.header = copy.deepcopy(msg.header)
         poses_msg_kf.header.frame_id = self.reference_frame_
         poses_msg_kf.poses.clear()
-        depth_range = []
+        # depth_range = []
         depth_image_cv = self.cv_bridge_.imgmsg_to_cv2(msg, desired_encoding='passthrough')    
         image_height, image_width = depth_image_cv.shape[:2]   
         self.latest_pixels_, self.latest_covariances_2d_, self.latest_depth_ranges_ = self.process_and_store_track_data(self.latest_kf_tracks_msg_)
@@ -257,7 +259,7 @@ class Yolo2PoseNode(Node):
             # Calculate the angle of rotation for the ellipse based on the eigenvectors.
             rotation_angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
             # Define the axes lengths for the ellipse based on the eigenvalues.
-            axes_lengths = (int(5 * np.sqrt(eigenvalues[0])), int(5 * np.sqrt(eigenvalues[1])))
+            axes_lengths = (int(depth_roi_ * np.sqrt(eigenvalues[0])), int(depth_roi_ * np.sqrt(eigenvalues[1])))
             # Create a mask image where the pixels within the ellipse are white (255) and others are black (0).
             mask_image = np.zeros(depth_image_cv.shape, dtype=np.uint8)
             x, y = mean_pixel
@@ -267,10 +269,15 @@ class Yolo2PoseNode(Node):
             else:
                 print(f"Mean pixel {mean_pixel} is outside the image size.")
             # Create a mask for depth values within the specified range.
-            depth_mask = cv2.inRange(depth_image_cv, depth_range[0], depth_range[1])
             # Apply the mask to the depth image to isolate the depth values within the range.
-            masked_depth_image = cv2.bitwise_and(depth_image_cv, depth_image_cv, mask=depth_mask)
+            # masked_depth_image = cv2.bitwise_and(depth_image_cv, depth_image_cv, mask=depth_mask)
             # Find contours in the depth mask which indicate the edges of objects.
+            # kernel = np.ones((5,5),np.uint8)
+            # erosion = cv2.erode(depth_image_cv,kernel,iterations = 1)     
+            depth_image_blurred = cv2.GaussianBlur(depth_image_cv, (5, 5), 0)
+
+            depth_mask = cv2.inRange(depth_image_blurred, depth_range[0], depth_range[1])
+       
             kfcontours, _ = cv2.findContours(depth_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
 
@@ -285,24 +292,29 @@ class Yolo2PoseNode(Node):
                     # Ensure the centroid coordinates are within the bounds of the image.
                     if 0 <= centroid_x < depth_image_cv.shape[1] and 0 <= centroid_y < depth_image_cv.shape[0]:
                         contour_depth_values = depth_image_cv[kfcontour[:, :, 1], kfcontour[:, :, 0]]
-                        contour_depth_values = contour_depth_values[(depth_range[0] <= contour_depth_values) & (contour_depth_values <= depth_range[1])]
-                        # Calculate the average depth within the contour
-                        print(" contour_depth_values " , contour_depth_values)
-                        if len(contour_depth_values) > 0:
-                            average_depth = np.mean(contour_depth_values)
-                            distance = np.sqrt((mean_pixel[0] - centroid_x) ** 2 + (mean_pixel[1] - centroid_y) ** 2)
+                        valid_depth_indices = np.logical_and(depth_range[0] <= contour_depth_values, contour_depth_values <= depth_range[1])
+                        if np.all(valid_depth_indices):
+                            # All depth values satisfy the conditions within the specified range
+                            valid_contour_depth_values = contour_depth_values
+                       
 
-                            
-                            print(" Average_depth " , average_depth)
-                            # Update nearest centroid and depth value if this is the closest one yet
-                            if distance < min_distance:
-                                min_distance = distance
-                                nearest_depth_value = average_depth
-                                nearest_centroid_x = centroid_x
-                                nearest_centroid_y = centroid_y
-        print(" nearest_depth_value " , nearest_depth_value)
+                            # print("valid_contour_depth_values " , valid_contour_depth_values)
+                            if len(valid_contour_depth_values) > 0:
+                                average_depth = np.mean(valid_contour_depth_values)
+                                distance = np.sqrt((mean_pixel[0] - centroid_x) ** 2 + (mean_pixel[1] - centroid_y) ** 2)
+
+                                
+                                # print(" Average_depth " , average_depth)
+                                # Update nearest centroid and depth value if this is the closest one yet
+                                if distance < min_distance:
+                                    min_distance = distance
+                                    nearest_depth_value = average_depth
+                                    nearest_centroid_x = centroid_x
+                                    nearest_centroid_y = centroid_y
+
+        # print(" nearest_depth_value " , nearest_depth_value)
         # Check if the depth value is within the expected range.
-        if depth_range[0] <= nearest_depth_value <= depth_range[1]:
+        if nearest_depth_value is not None and depth_range[0] <= nearest_depth_value <= depth_range[1]:
             # If yes, convert the pixel coordinates and depth value to a 3D pose.
             pixel_pose = [nearest_centroid_x, nearest_centroid_y]
             kf_pose_msg = self.depthToPoseMsg(pixel_pose, nearest_depth_value)
@@ -368,6 +380,8 @@ class Yolo2PoseNode(Node):
             self.get_logger().error(
                 f'[process_and_store_track_data] Could not transform {msg.header.frame_id} to {self.camera_frame_}: {ex}')
             return
+        # std_range_ = self.get_parameter('std_range').value
+        std_range_ = self.get_parameter('std_range').value
 
         for track in msg.tracks:
             x = track.pose.pose.position.x
@@ -408,14 +422,13 @@ class Yolo2PoseNode(Node):
                 )
 
 
-        depth_range = (
-            z_transformed -  5 * np.sqrt(cov_z_transformed),
-            z_transformed +  5 * np.sqrt(cov_z_transformed)
-                )
-                
-        self.latest_depth_ranges_.append(depth_range)
-        self.latest_pixels_.append(pixel)
-        self.latest_covariances_2d_.append(covariance_2d)
+                depth_range = (
+		            max(0, z_transformed -  std_range_ * np.sqrt(cov_z_transformed)),
+                    z_transformed +  std_range_ * np.sqrt(cov_z_transformed))
+                        
+                self.latest_depth_ranges_.append(depth_range)
+                self.latest_pixels_.append(pixel)
+                self.latest_covariances_2d_.append(covariance_2d)
         return self.latest_pixels_, self.latest_covariances_2d_, self.latest_depth_ranges_ 
     
     def project_3d_to_2d(self, x_cam, y_cam, z_cam):
