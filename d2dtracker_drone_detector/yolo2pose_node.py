@@ -41,9 +41,10 @@ from geometry_msgs.msg import Pose, Point
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 from std_msgs.msg import Header
 from rclpy.node import Node
-
+import tf2_ros
+from geometry_msgs.msg import Pose, Point, Quaternion
 import copy
-
+from std_msgs.msg import Float32
 class Yolo2PoseNode(Node):
 
     def __init__(self):
@@ -100,6 +101,9 @@ class Yolo2PoseNode(Node):
         # self.pose_kf_meas_pub_ = self.create_publisher(PoseArray, "kf_poses_mes", 10)
         self.overlay_ellipses_image_yolo_ = self.create_publisher(Image, "overlay_yolo_image", 10)
         self.overlay_ellipses_image_kf_ = self.create_publisher(Image, "overlay_kf_image", 10)
+        self.pose_publisher = self.create_publisher(Pose, 'transformed_pose', 10)
+        self.timer = self.create_timer(0.1, self.publish_transformed_pose)
+
 
         self.declare_parameter('use_yolo', True)
         self.declare_parameter('use_kf', True)
@@ -125,22 +129,24 @@ class Yolo2PoseNode(Node):
                   
         current_detection_t = float(yolo_msg.header.stamp.sec) + \
                                 float(yolo_msg.header.stamp.nanosec)/1e9
+
         if len(yolo_msg.detections) > 0:
 
             if current_detection_t > self.last_detection_t_:
                 new_measurements_yolo = True
                 self.last_detection_t_ = current_detection_t
 
+
         current_kf_measurment_t = float(kf_msg.header.stamp.sec) + \
                                 float(kf_msg.header.stamp.nanosec)/1e9
         if len(kf_msg.tracks) > 0:
             if current_kf_measurment_t > self.last_kf_measurments_t_ and not new_measurements_yolo:
-
                 new_measurements_kf = True
                 self.last_kf_measurments_t_ = current_kf_measurment_t
-        if use_yolo and new_measurements_yolo:
-           
 
+
+        
+        if use_yolo and new_measurements_yolo:
             yolo_poses = self.yolo_process_pose(copy.deepcopy(msg))
             if len(yolo_poses.poses) > 0:
 
@@ -226,9 +232,6 @@ class Yolo2PoseNode(Node):
         image_msg = self.cv_bridge_.cv2_to_imgmsg(cv_image, encoding="passthrough")
         self.overlay_ellipses_image_yolo_.publish(image_msg)
         return poses_msg 
-
-
-
 
 
     def kf_process_pose(self, msg: Image):
@@ -344,11 +347,32 @@ class Yolo2PoseNode(Node):
         # Publish the modified depth image with ellipses on a ROS2 topic
         self.overlay_ellipses_image_yolo_.publish(ellipses_image_msg)
 
-
         return poses_msg_kf  
         # self.latest_pixels_ = []
         # self.latest_covariances_2d_ = []
         # self.latest_depth_ranges_   = []  
+    
+    def publish_transformed_pose(self):
+        try:
+            transform = self.tf_buffer_.lookup_transform('interceptor/odom', 'target/base_link', rclpy.time.Time())
+            translation = transform.transform.translation
+            rotation = transform.transform.rotation
+
+            # Create a Pose message with the obtained transform
+            pose_msg = Pose()
+            pose_msg.position.x = translation.x
+            pose_msg.position.y = translation.y
+            pose_msg.position.z = translation.z
+            pose_msg.orientation = rotation
+
+            # Publish the transformed pose
+            self.pose_publisher.publish(pose_msg)
+            return translation.x, translation.y, translation.z
+        
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            self.get_logger().warn(f"Exception occurred: {e}")
+
+
 
     def caminfoCallback(self,msg: CameraInfo):
         # TODO : fill self.camera_info_ field
@@ -412,7 +436,6 @@ class Yolo2PoseNode(Node):
 
             transformed_pose_msg = self.transformPoseWithCovariance(tf2_cam_msg, transform)
 
-
             if transformed_pose_msg:
                 x_transformed = transformed_pose_msg.pose.pose.position.x
                 y_transformed = transformed_pose_msg.pose.pose.position.y
@@ -428,7 +451,6 @@ class Yolo2PoseNode(Node):
                     cov_x_transformed, cov_y_transformed, cov_z_transformed
                 )
 
-
                 depth_range = (
 		            max(0, z_transformed -  std_range_ * np.sqrt(cov_z_transformed)),
                     z_transformed +  std_range_ * np.sqrt(cov_z_transformed))
@@ -436,6 +458,8 @@ class Yolo2PoseNode(Node):
                 self.latest_depth_ranges_.append(depth_range)
                 self.latest_pixels_.append(pixel)
                 self.latest_covariances_2d_.append(covariance_2d)
+
+        
         return self.latest_pixels_, self.latest_covariances_2d_, self.latest_depth_ranges_ 
     
     def project_3d_to_2d(self, x_cam, y_cam, z_cam):
