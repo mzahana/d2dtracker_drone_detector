@@ -63,6 +63,11 @@ class Yolo2PoseNode(Node):
         self.latest_pixels_ = []
         self.latest_covariances_2d_ = []
         self.latest_depth_ranges_= []
+
+        self.track_data = []
+        self.pose_data = []
+        self.msg_count = 0
+        self.msg_limit = 100
         # Get parameters
         self.debug_ = self.get_parameter('debug').get_parameter_value().bool_value
         self.publish_processed_images_ = self.get_parameter('publish_processed_images').get_parameter_value().bool_value
@@ -103,7 +108,10 @@ class Yolo2PoseNode(Node):
         self.overlay_ellipses_image_kf_ = self.create_publisher(Image, "overlay_kf_image", 10)
         self.pose_publisher = self.create_publisher(Pose, 'transformed_pose', 10)
         self.timer = self.create_timer(0.1, self.publish_transformed_pose)
-
+        # self.mean_square_error_pub = self.create_publisher(Float32, 'mean_square_error', 10)
+        # self.root_mean_square_error_pub = self.create_publisher(Float32, 'root_mean_square_error', 10)
+        # self.absolute_position_error_pub = self.create_publisher(Float32, 'absolute_position_error', 10)
+        # self.timer = self.create_timer(1, self.calculate_errors)
 
         self.declare_parameter('use_yolo', True)
         self.declare_parameter('use_kf', True)
@@ -113,6 +121,79 @@ class Yolo2PoseNode(Node):
         self.declare_parameter('modified_bbx_h', 0.9)
         self.declare_parameter('min_depth_range', 2.0)
         self.declare_parameter('max_depth_range', 10.0)
+
+
+    
+    def collect_data(self, msg:KFTracks, actual_pose_values):
+            
+        # Collect track data
+        for track in msg.tracks:
+            x = track.pose.pose.position.x
+            y = track.pose.pose.position.y
+            z = track.pose.pose.position.z
+
+            self.track_data.append((x, y, z)) 
+                
+            self.get_logger().info(f'TrackData: {len(self.track_data)}')
+
+            # Collect pose data
+            # pose_tr = self.actual_pose()
+            pose_x, pose_y, pose_z = actual_pose_values
+
+            self.pose_data.append((pose_x, pose_y, pose_z))
+            self.get_logger().info(f'PoseData: {len(self.pose_data)}')
+
+            # Increment message count
+            self.msg_count += 1
+            # print(f"Count: {self.msg_count}")
+
+            # Check if reached the limit
+            if self.msg_count >= self.msg_limit:
+                self.calculate_errors()
+                self.reset_data()
+
+    def calculate_errors(self):
+        squared_error = 0.0
+        abs_error = 0.0
+        for i in range(self.msg_limit):
+            pose_x, pose_y, pose_z = self.pose_data[i]
+            x, y, z = self.track_data[i]
+            # clacutale Mean squared Error 
+            kf_err_x = ((pose_x - x) **2)
+            kf_err_y = ((pose_y - y) **2)
+            kf_err_z = ((pose_z - z) **2)
+            # print(f"kf_err_x: {kf_err_x}")
+
+            # clacutale Absolute Position Error
+            abs_err_x = abs(pose_x - x)
+            abs_err_y = abs(pose_y - y)
+            abs_err_z = abs(pose_z - z)
+
+            squared_error += kf_err_x + kf_err_y + kf_err_z
+            abs_error +=  abs_err_x + abs_err_y + abs_err_z
+        # Calculate Mean Squared Error
+        # num_data_points = self.msg_limit * 3  # Three dimensions (x, y, z) per data point
+        mse = squared_error / self.msg_limit
+        rmse = np.sqrt(mse)
+        avg_abs_error = abs_error
+        # Publish errors
+        # self.mean_square_error_pub.publish(Float32(data=mse))
+        # self.root_mean_square_error_pub.publish(Float32(data=rmse))
+        # self.absolute_position_error_pub.publish(Float32(data=avg_abs_error))
+
+        # print(f"Total KF Error: {squared_error}")
+        # print(f"Mean Squared Error: {mse}")
+        self.get_logger().info(f'Mean Squared Error: {mse}')
+        self.get_logger().info(f'Root Mean Squared Error: {rmse}')
+        self.get_logger().info(f'Absolute Position Error: {avg_abs_error}')
+    def reset_data(self):
+        # Clear data and reset message count
+        self.track_data = []
+        self.pose_data = []
+        self.msg_count = 0
+
+
+
     def depthCallback(self, msg: Image):
         use_yolo = self.get_parameter('use_yolo').value
         use_kf = self.get_parameter('use_kf').value
@@ -126,7 +207,8 @@ class Yolo2PoseNode(Node):
 
         new_measurements_yolo = False
         new_measurements_kf = False
-                  
+
+
         current_detection_t = float(yolo_msg.header.stamp.sec) + \
                                 float(yolo_msg.header.stamp.nanosec)/1e9
 
@@ -159,7 +241,7 @@ class Yolo2PoseNode(Node):
                     if len(kf_poses.poses) > 0:
 
                         self.poses_pub_.publish(kf_poses)
-
+    
     def yolo_process_pose(self, msg: Image):
         yolo_msg = copy.deepcopy(self.yolo_detections_msg_)
 
@@ -351,26 +433,48 @@ class Yolo2PoseNode(Node):
         # self.latest_pixels_ = []
         # self.latest_covariances_2d_ = []
         # self.latest_depth_ranges_   = []  
-    
+        
     def publish_transformed_pose(self):
+        try:
+            pose_values = self.actual_pose()
+
+            if pose_values is not None:  # Check if pose_values is not None
+                pose_x, pose_y, pose_z = pose_values
+
+                # Create a Pose message with the obtained transform
+                pose_msg = Pose()
+                pose_msg.position.x = float(pose_x)
+                pose_msg.position.y = float(pose_y)
+                pose_msg.position.z = float(pose_z)
+                # pose_msg.orientation = pose_orientation
+
+                # Publish the transformed pose
+                self.pose_publisher.publish(pose_msg)
+            else:
+                self.get_logger().warn("Pose values are None.")
+
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            self.get_logger().warn(f"Exception occurred: {e}")
+
+
+    def actual_pose(self):
         try:
             transform = self.tf_buffer_.lookup_transform('interceptor/odom', 'target/base_link', rclpy.time.Time())
             translation = transform.transform.translation
             rotation = transform.transform.rotation
 
-            # Create a Pose message with the obtained transform
-            pose_msg = Pose()
-            pose_msg.position.x = translation.x
-            pose_msg.position.y = translation.y
-            pose_msg.position.z = translation.z
-            pose_msg.orientation = rotation
+            # Extract pose values
+            pose_x = translation.x
+            pose_y = translation.y
+            pose_z = translation.z
+            # pose_orientation = rotation
 
-            # Publish the transformed pose
-            self.pose_publisher.publish(pose_msg)
-            return translation.x, translation.y, translation.z
-        
+            return pose_x, pose_y, pose_z 
+            
         except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
             self.get_logger().warn(f"Exception occurred: {e}")
+            return 0,0,0  # Return a default value in case of exception
+
 
 
 
@@ -413,6 +517,8 @@ class Yolo2PoseNode(Node):
             return
         # std_range_ = self.get_parameter('std_range').value
         std_range_ = self.get_parameter('std_range').value
+        actual_pose_values = self.actual_pose()
+        self.collect_data(self.latest_kf_tracks_msg_, actual_pose_values) 
 
         for track in msg.tracks:
             x = track.pose.pose.position.x
@@ -557,6 +663,8 @@ class Yolo2PoseNode(Node):
             return None
 
         return pose_with_cov_stamped_msg
+    
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -568,3 +676,5 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()        
+
+
