@@ -44,7 +44,7 @@ from rclpy.node import Node
 import tf2_ros
 from geometry_msgs.msg import Pose, Point, Quaternion
 import copy
-from std_msgs.msg import Float32
+from std_msgs.msg import Float64
 class Yolo2PoseNode(Node):
 
     def __init__(self):
@@ -108,10 +108,12 @@ class Yolo2PoseNode(Node):
         self.overlay_ellipses_image_kf_ = self.create_publisher(Image, "overlay_kf_image", 10)
         self.pose_publisher = self.create_publisher(Pose, 'transformed_pose', 10)
         self.timer = self.create_timer(0.1, self.publish_transformed_pose)
-        # self.mean_square_error_pub = self.create_publisher(Float32, 'mean_square_error', 10)
-        # self.root_mean_square_error_pub = self.create_publisher(Float32, 'root_mean_square_error', 10)
-        # self.absolute_position_error_pub = self.create_publisher(Float32, 'absolute_position_error', 10)
-        # self.timer = self.create_timer(1, self.calculate_errors)
+        self.mse_publisher = self.create_publisher(Float64, 'mse', 10)
+        self.rmse_publisher = self.create_publisher(Float64, 'rmse', 10)
+        self.abs_publisher = self.create_publisher(Float64, 'abs', 10)
+
+        timer_period = 1  # seconds
+        self.timer = self.create_timer(timer_period, self.calculate_errors)
 
         self.declare_parameter('use_yolo', True)
         self.declare_parameter('use_kf', True)
@@ -153,6 +155,11 @@ class Yolo2PoseNode(Node):
                 self.reset_data()
 
     def calculate_errors(self):
+        if len(self.pose_data) < self.msg_limit or len(self.track_data) < self.msg_limit:
+            # Insufficient data to calculate errors
+            print("Insufficient data for calculations")
+            return
+    
         squared_error = 0.0
         abs_error = 0.0
         for i in range(self.msg_limit):
@@ -176,23 +183,36 @@ class Yolo2PoseNode(Node):
         mse = squared_error / self.msg_limit
         rmse = np.sqrt(mse)
         avg_abs_error = abs_error
-        # Publish errors
-        # self.mean_square_error_pub.publish(Float32(data=mse))
-        # self.root_mean_square_error_pub.publish(Float32(data=rmse))
-        # self.absolute_position_error_pub.publish(Float32(data=avg_abs_error))
 
+        # Publish calculated errors
+        self.publish_mse(mse)
+        self.publish_rmse(rmse)
+        self.publish_abs(avg_abs_error)
         # print(f"Total KF Error: {squared_error}")
         # print(f"Mean Squared Error: {mse}")
-        self.get_logger().info(f'Mean Squared Error: {mse}')
-        self.get_logger().info(f'Root Mean Squared Error: {rmse}')
-        self.get_logger().info(f'Absolute Position Error: {avg_abs_error}')
+        # self.get_logger().info(f'Mean Squared Error: {mse}')
+        # self.get_logger().info(f'Root Mean Squared Error: {rmse}')
+        # self.get_logger().info(f'Absolute Position Error: {avg_abs_error}')
     def reset_data(self):
         # Clear data and reset message count
         self.track_data = []
         self.pose_data = []
         self.msg_count = 0
 
+    def publish_mse(self, mse):
+        msg = Float64()
+        msg.data = mse
+        self.mse_publisher.publish(msg)
 
+    def publish_rmse(self, rmse):
+        msg = Float64()
+        msg.data = rmse
+        self.rmse_publisher.publish(msg)
+
+    def publish_abs(self, avg_abs_error):
+        msg = Float64()
+        msg.data = avg_abs_error
+        self.abs_publisher.publish(msg)
 
     def depthCallback(self, msg: Image):
         use_yolo = self.get_parameter('use_yolo').value
