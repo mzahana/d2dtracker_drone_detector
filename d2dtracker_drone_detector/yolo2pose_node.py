@@ -119,10 +119,6 @@ class Yolo2PoseNode(Node):
         self.declare_parameter('use_kf', True)
         self.declare_parameter('depth_roi', 5.0)
         self.declare_parameter('std_range', 5.0)
-        self.declare_parameter('modified_bbx_w', 0.9)
-        self.declare_parameter('modified_bbx_h', 0.9)
-        self.declare_parameter('min_depth_range', 2.0)
-        self.declare_parameter('max_depth_range', 10.0)
 
 
     
@@ -286,10 +282,7 @@ class Yolo2PoseNode(Node):
             self.get_logger().error(
                 f'[Yolo2PoseNode::depthCallback] Could not transform {self.reference_frame_} to {msg.header.frame_id}: {ex}')
             return
-        modified_bbx_w = self.get_parameter('modified_bbx_w').value
-        modified_bbx_h = self.get_parameter('modified_bbx_h').value
-        min_depth_range = self.get_parameter('min_depth_range').value
-        max_depth_range = self.get_parameter('max_depth_range').value
+
         #depth_image_type = cv_image.dtype
         #print("Depth Image Type:", depth_image_type)
         obj = Detection()
@@ -306,30 +299,36 @@ class Yolo2PoseNode(Node):
             y = int(obj.bbox.center.position.y - obj.bbox.size.y/2)
             w = int(obj.bbox.size.x)
             h = int(obj.bbox.size.y)
+            self.filter_kernel_size = (5,5)
+            self.depth_threshold = 0
+            depth_image_roi = cv_image[y:y+h, x:x+w]
+            _, depth_thresholded = cv2.threshold(depth_image_roi, self.depth_threshold, 255, cv2.THRESH_BINARY)
+            depth_filtered = cv2.GaussianBlur(depth_thresholded, self.filter_kernel_size, 0)
+            contours, _ = cv2.findContours(depth_filtered.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            x_modified = int(obj.bbox.center.position.x)
-            y_modified = int(obj.bbox.center.position.y)
-            w_modified = int(modified_bbx_w * w)
-            h_modified = int(modified_bbx_h * h)
-            modified_roi = cv_image[y_modified:y_modified + h_modified, x_modified:x_modified + w_modified]
-            # roi_uint8 = (modified_roi * 255).astype(np.uint8)
-            valid_values = modified_roi[~np.isnan(modified_roi)]
-            valid_values = valid_values[np.logical_and(min_depth_range <= valid_values, valid_values <= max_depth_range)]
-            if len(valid_values) > 0:
-                avg_depth = np.mean(valid_values)
-            # +self.get_logger().info(f"[Yolo2PoseNode::yolo_process_pose] depth_at_centroid: {avg_depth}")
-                depth_at_centroid = avg_depth
+            # interested in the largest contour only:
+            if len(contours) > 0:
+                largest_contour = max(contours, key=cv2.contourArea)
+                M = cv2.moments(largest_contour)
+                if M["m00"] != 0:  # avoid division by zero
+                    cx = int(M["m10"] / M["m00"])  # centroid x
+                    cy = int(M["m01"] / M["m00"])  # centroid y
+                else:
+                    if self.debug_:
+                        self.get_logger().warn("[Yolo2PoseNode::depthCallback] Moment computation resulted in division by zero")
+                    continue
+                depth_at_centroid = depth_image_roi[cy, cx]
 
+                # Use centroid pixel and depth_at_centroid for your further processing:
+                pixel = [x + cx, y + cy]
+                pose_msg = self.depthToPoseMsg(pixel, depth_at_centroid)
+                transformed_pose_msg = self.transformPose(pose_msg, transform)
 
-            pixel = [x_modified, y_modified]
-            pose_msg = self.depthToPoseMsg(pixel, depth_at_centroid)
-            transformed_pose_msg = self.transformPose(pose_msg, transform)
-
-            if transformed_pose_msg is not None:
-                poses_msg.poses.append(transformed_pose_msg)
+                if transformed_pose_msg is not None:
+                    poses_msg.poses.append(transformed_pose_msg)
         
         center_coordinates = (int(obj.bbox.center.position.x), int(obj.bbox.center.position.y))
-        cv2.ellipse(cv_image, center_coordinates, (int(w_modified/2), int(w_modified/2)), 0, 0, 360, ellipse_color, 1)
+        cv2.ellipse(cv_image, center_coordinates, (int(w/2), int(h/2)), 0, 0, 360, ellipse_color, 1)
         cv2.putText(cv_image, "YOLO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
         image_msg = self.cv_bridge_.cv2_to_imgmsg(cv_image, encoding="passthrough")
         self.overlay_ellipses_image_yolo_.publish(image_msg)
