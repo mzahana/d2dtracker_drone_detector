@@ -466,7 +466,8 @@ class Yolo2PoseNode(Node):
                 pose_msg.position.y = float(pose_y)
                 pose_msg.position.z = float(pose_z)
                 # pose_msg.orientation = pose_orientation
-
+                # actual_pose_values = self.actual_pose()
+                self.collect_data(self.latest_kf_tracks_msg_, pose_values) 
                 # Publish the transformed pose
                 self.pose_publisher.publish(pose_msg)
             else:
@@ -536,8 +537,7 @@ class Yolo2PoseNode(Node):
             return
         # std_range_ = self.get_parameter('std_range').value
         std_range_ = self.get_parameter('std_range').value
-        actual_pose_values = self.actual_pose()
-        self.collect_data(self.latest_kf_tracks_msg_, actual_pose_values) 
+
 
         for track in msg.tracks:
             x = track.pose.pose.position.x
