@@ -9,7 +9,7 @@ This node receives
 and converts the 2D Yolo detection to a 3D position as
     geometry_msgs/msg/PoseArray
 
-Author: Mohamed Abdelkader
+Author: Mohamed Abdelkader, Khaled Gabr
 Contact: mohamedashraf123@gmail.com
 
 """
@@ -105,7 +105,7 @@ class Yolo2PoseNode(Node):
         self.poses_pub_ = self.create_publisher(PoseArray,'yolo_poses',10)
         # self.pose_kf_meas_pub_ = self.create_publisher(PoseArray, "kf_poses_mes", 10)
         self.overlay_ellipses_image_yolo_ = self.create_publisher(Image, "overlay_yolo_image", 10)
-        self.overlay_ellipses_image_kf_ = self.create_publisher(Image, "overlay_kf_image", 10)
+        # self.overlay_ellipses_image_kf_ = self.create_publisher(Image, "overlay_kf_image", 10)
         self.pose_publisher = self.create_publisher(Pose, 'transformed_pose', 10)
         self.timer = self.create_timer(0.1, self.publish_transformed_pose)
         self.mse_publisher = self.create_publisher(Float64, 'mse', 10)
@@ -140,14 +140,14 @@ class Yolo2PoseNode(Node):
 
             self.track_data.append((x, y, z)) 
                 
-            self.get_logger().info(f'TrackData: {len(self.track_data)}')
+            # self.get_logger().info(f'TrackData: {len(self.track_data)}')
 
             # Collect pose data
             # pose_tr = self.actual_pose()
             pose_x, pose_y, pose_z = actual_pose_values
 
             self.pose_data.append((pose_x, pose_y, pose_z))
-            self.get_logger().info(f'PoseData: {len(self.pose_data)}')
+            # self.get_logger().info(f'PoseData: {len(self.pose_data)}')
 
             # Increment message count
             self.msg_count += 1
