@@ -115,15 +115,23 @@ class Yolo2PoseNode(Node):
         timer_period = 1  # seconds
         self.timer = self.create_timer(timer_period, self.calculate_errors)
 
-        self.declare_parameter('use_yolo', True)
-        self.declare_parameter('use_kf', True)
+        self.declare_parameter('yolo_measurement_only', True)
+        self.declare_parameter('kf_feedback', True)
         self.declare_parameter('depth_roi', 5.0)
         self.declare_parameter('std_range', 5.0)
 
 
     
     def collect_data(self, msg:KFTracks, actual_pose_values):
-            
+        """
+        @brief Collects track and pose data from received messages for error calculation.
+        
+        @param msg (KFTracks): Message containing tracks data.
+        @param actual_pose_values (tuple): Tuple containing actual pose values.
+
+        This method iterates through the tracks in the received message, gathering track data and actual pose data.
+        Once the message count reaches the specified limit, it triggers error calculation.
+        """   
         # Collect track data
         for track in msg.tracks:
             x = track.pose.pose.position.x
@@ -151,6 +159,15 @@ class Yolo2PoseNode(Node):
                 self.reset_data()
 
     def calculate_errors(self):
+        """
+        @brief Calculates error metrics based on collected pose and track data.
+        
+        @details Calculates Mean Squared Error (MSE), Root Mean Squared Error (RMSE),
+                and Average Absolute Error (AAE) between collected pose and track data.
+                If there's insufficient data for calculations, it indicates the same.
+
+        @return None
+        """
         if len(self.pose_data) < self.msg_limit or len(self.track_data) < self.msg_limit:
             # Insufficient data to calculate errors
             print("Insufficient data for calculations")
@@ -190,29 +207,72 @@ class Yolo2PoseNode(Node):
         # self.get_logger().info(f'Root Mean Squared Error: {rmse}')
         # self.get_logger().info(f'Absolute Position Error: {avg_abs_error}')
     def reset_data(self):
+        """
+        @brief Resets collected track and pose data along with the message count.
+
+        @details Clears the stored track and pose data lists and resets the message count to zero.
+        
+        @return None
+        """
         # Clear data and reset message count
         self.track_data = []
         self.pose_data = []
         self.msg_count = 0
 
     def publish_mse(self, mse):
+        """
+        @brief Publishes the Mean Squared Error (MSE) value.
+
+        @param mse (float): Mean Squared Error value to be published.
+
+        @details Publishes the calculated MSE value using a Float64 message.
+        
+        @return None
+        """
         msg = Float64()
         msg.data = mse
         self.mse_publisher.publish(msg)
 
     def publish_rmse(self, rmse):
+        """
+        @brief Publishes the Root Mean Squared Error (RMSE) value.
+
+        @param rmse (float): Root Mean Squared Error value to be published.
+
+        @details Publishes the calculated RMSE value using a Float64 message.
+        
+        @return None
+        """
         msg = Float64()
         msg.data = rmse
         self.rmse_publisher.publish(msg)
 
     def publish_abs(self, avg_abs_error):
+        """
+        @brief Publishes the Average Absolute Error (AAE) value.
+
+        @param avg_abs_error (float): Average Absolute Error value to be published.
+
+        @details Publishes the calculated AAE value using a Float64 message.
+        
+        @return None
+        """
         msg = Float64()
         msg.data = avg_abs_error
         self.abs_publisher.publish(msg)
 
     def depthCallback(self, msg: Image):
-        use_yolo = self.get_parameter('use_yolo').value
-        use_kf = self.get_parameter('use_kf').value
+        """
+        @brief Callback function triggered upon receiving depth image data.
+        
+        @param msg (Image): Depth image message.
+
+        This function assesses the provided depth image message and processes YOLO detections or Kalman Filter feedback.
+        It checks parameters to determine whether to use YOLO measurements exclusively or incorporate Kalman Filter feedback.
+        Based on these conditions, it executes appropriate processing and publishes corresponding pose data.
+        """
+        use_yolo = self.get_parameter('yolo_measurement_only').value
+        use_kf = self.get_parameter('kf_feedback').value
 
         kf_msg = copy.deepcopy(self.latest_kf_tracks_msg_)
         yolo_msg = copy.deepcopy(self.yolo_detections_msg_)
@@ -259,6 +319,19 @@ class Yolo2PoseNode(Node):
                         self.poses_pub_.publish(kf_poses)
     
     def yolo_process_pose(self, msg: Image):
+        """
+        @brief Processes YOLO detections in the provided depth image to extract object poses.
+
+        @param msg (Image): Depth image message containing YOLO detections.
+
+        This method extracts YOLO detections from the depth image and computes object poses.
+        It converts the received depth image into a CV image, handles transformations, and filters depth data.
+        For each YOLO-detected object, it identifies the largest contour, computes the centroid, and extracts depth information.
+        The centroid's pixel coordinates and depth data are used to generate Pose messages after transformation.
+        Finally, it overlays ellipses on the CV image to represent YOLO-detected objects and publishes the modified image.
+
+        @return poses_msg (PoseArray): PoseArray containing the transformed poses of YOLO-detected objects.
+        """
         yolo_msg = copy.deepcopy(self.yolo_detections_msg_)
 
         if self.camera_info_ is None:
@@ -322,13 +395,13 @@ class Yolo2PoseNode(Node):
                 # Use centroid pixel and depth_at_centroid for your further processing:
                 pixel = [x + cx, y + cy]
                 pose_msg = self.depthToPoseMsg(pixel, depth_at_centroid)
-                transformed_pose_msg = self.transformPose(pose_msg, transform)
+                transformed_pose_msg = self.transform_pose(pose_msg, transform)
 
                 if transformed_pose_msg is not None:
                     poses_msg.poses.append(transformed_pose_msg)
         
         center_coordinates = (int(obj.bbox.center.position.x), int(obj.bbox.center.position.y))
-        cv2.ellipse(cv_image, center_coordinates, (int(w/2), int(h/2)), 0, 0, 360, ellipse_color, 1)
+        cv2.circle(cv_image, center_coordinates, int(w/2), ellipse_color, 1)
         cv2.putText(cv_image, "YOLO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
         image_msg = self.cv_bridge_.cv2_to_imgmsg(cv_image, encoding="passthrough")
         self.overlay_ellipses_image_yolo_.publish(image_msg)
@@ -336,6 +409,21 @@ class Yolo2PoseNode(Node):
 
 
     def kf_process_pose(self, msg: Image):
+        """
+        @brief Processes Kalman Filter (KF) tracks to derive object poses based on depth image data.
+
+        @param msg (Image): Depth image message for KF track processing.
+
+        This method processes Kalman Filter tracks derived from the depth image to compute object poses.
+        It retrieves KF tracks, parameters for depth regions of interest, and transforms from the reference frame.
+        Using the provided depth image and KF tracks, it extracts ellipses, filters depth data, and computes object centroids.
+        For each identified contour within the specified depth range, it computes centroid coordinates and corresponding depths.
+        The closest centroid with a valid depth within the expected range is used to generate a Pose message.
+        This message undergoes transformation, and if successful, it's added to the PoseArray for KF-detected objects.
+        Additionally, it overlays "KF" labels on the modified depth image with ellipses and publishes it.
+
+        @return poses_msg_kf (PoseArray): PoseArray containing the transformed poses of KF-detected objects.
+        """
         kf_msg = copy.deepcopy(self.latest_kf_tracks_msg_)
         # depth_roi_ = self.get_parameter('depth_roi').value
         depth_roi_ = self.get_parameter('depth_roi').value
@@ -430,7 +518,7 @@ class Yolo2PoseNode(Node):
             pixel_pose = [nearest_centroid_x, nearest_centroid_y]
             kf_pose_msg = self.depthToPoseMsg(pixel_pose, nearest_depth_value)
             # Transform the pose to a different coordinate frame if necessary.
-            kf_transformed_pose_msg = self.transformPose(kf_pose_msg, transform)
+            kf_transformed_pose_msg = self.transform_pose(kf_pose_msg, transform)
 
             if(kf_transformed_pose_msg is not None):
                 poses_msg_kf.poses.append(kf_transformed_pose_msg)
@@ -454,6 +542,13 @@ class Yolo2PoseNode(Node):
         # self.latest_depth_ranges_   = []  
         
     def publish_transformed_pose(self):
+        """
+        @brief Publishes the transformed pose by collecting actual pose data.
+
+        This method retrieves the actual pose values and, if available, creates a Pose message.
+        It then collects data using the latest Kalman Filter tracks and the obtained pose values.
+        If pose values are not available, it logs a warning. It handles potential lookup exceptions.
+        """
         try:
             pose_values = self.actual_pose()
 
@@ -478,6 +573,15 @@ class Yolo2PoseNode(Node):
 
 
     def actual_pose(self):
+        """
+        @brief Retrieves the actual pose from the transform between 'interceptor/odom' and 'target/base_link'.
+
+        @return tuple: Tuple containing the x, y, and z components of the actual pose.
+
+        This method looks up the transform between two frames and extracts the translation components
+        to derive the actual pose in terms of x, y, and z coordinates.
+        It handles potential lookup exceptions, returning a default value in case of failure.
+        """
         try:
             transform = self.tf_buffer_.lookup_transform('interceptor/odom', 'target/base_link', rclpy.time.Time())
             translation = transform.transform.translation
@@ -499,6 +603,14 @@ class Yolo2PoseNode(Node):
 
 
     def caminfoCallback(self,msg: CameraInfo):
+        """
+        @brief Callback function for handling camera information.
+
+        @param msg (CameraInfo): Camera information message.
+
+        This method extracts camera parameters (focal lengths and principal points) from the CameraInfo message.
+        It ensures the validity of the provided parameters through a sanity check and assigns them to self.camera_info_.
+        """
         # TODO : fill self.camera_info_ field
         P = np.array(msg.p)
         K = np.array(msg.k)
@@ -511,14 +623,41 @@ class Yolo2PoseNode(Node):
             self.camera_info_ = {'fx': K[0][0], 'fy': K[1][1], 'cx': K[0][2], 'cy': K[1][2]}
 
     def detectionsCallback(self, msg: DetectionArray):
+        """
+        @brief Callback function for handling detection messages.
+
+        @param msg: Detection message.
+
+        This method stores received detection messages for further processing or usage within the system.
+        """
         self.yolo_detections_msg_ = msg
 
 
     def handle_KF_tracker_data(self, msg: KFTracks):
+        """
+        @brief Handles incoming Kalman Filter tracker data.
+
+        @param msg: Kalman Filter tracks message.
+
+        This method manages received Kalman Filter tracks for subsequent processing or utilization as needed.
+        """
         self.latest_kf_tracks_msg_ = msg
 
     def process_and_store_track_data(self, msg: KFTracks):
+        """
+        @brief Processes Kalman Filter track data to extract pixel coordinates, 2D covariances, and depth ranges.
 
+        @param msg: Kalman Filter tracks message.
+
+        This method transforms and processes the received Kalman Filter track data to extract:
+        - Pixel coordinates of the tracked objects in the camera frame
+        - 2D covariances of the objects in the camera frame
+        - Depth ranges of the objects based on standard deviations
+
+        It clears the previous stored data and then iterates through the tracks to compute and store pixel coordinates,
+        2D covariances, and depth ranges for further usage or analysis.
+        Returns the updated lists of pixels, 2D covariances, and depth ranges.
+        """
         self.latest_pixels_.clear()
         self.latest_covariances_2d_.clear()
         self.latest_depth_ranges_.clear()
@@ -559,7 +698,7 @@ class Yolo2PoseNode(Node):
             tf2_cam_msg.pose.covariance[7] = cov_y
             tf2_cam_msg.pose.covariance[14] = cov_z
 
-            transformed_pose_msg = self.transformPoseWithCovariance(tf2_cam_msg, transform)
+            transformed_pose_msg = self.transform_pose_cov(tf2_cam_msg, transform)
 
             if transformed_pose_msg:
                 x_transformed = transformed_pose_msg.pose.pose.position.x
@@ -571,7 +710,7 @@ class Yolo2PoseNode(Node):
                 cov_x_transformed = cov_transformed[0]
                 cov_y_transformed = cov_transformed[7]
                 cov_z_transformed = cov_transformed[14]
-                covariance_2d = self.project_3d_cov_to_2d(
+                covariance_2d = self.project_3d_covariance_to_2d(
                     x_transformed, y_transformed, z_transformed, 
                     cov_x_transformed, cov_y_transformed, cov_z_transformed
                 )
@@ -588,6 +727,18 @@ class Yolo2PoseNode(Node):
         return self.latest_pixels_, self.latest_covariances_2d_, self.latest_depth_ranges_ 
     
     def project_3d_to_2d(self, x_cam, y_cam, z_cam):
+        """
+        @brief Projects 3D coordinates onto 2D pixel coordinates.
+
+        @param x_cam: X-coordinate in the camera frame.
+        @param y_cam: Y-coordinate in the camera frame.
+        @param z_cam: Z-coordinate in the camera frame.
+
+        @return pixel: Computed 2D pixel coordinates.
+
+        This method computes the 2D pixel coordinates from the provided 3D coordinates in the camera frame.
+        It uses intrinsic camera parameters (focal lengths and principal points) for projection.
+        """
         pixel = [0, 0]
         fx = self.camera_info_['fx']
         fy = self.camera_info_['fy']
@@ -600,7 +751,22 @@ class Yolo2PoseNode(Node):
             v = int(fy * y_cam / z_cam + cy)
             pixel = [u, v]
         return pixel
-    def project_3d_cov_to_2d(self, x_cam, y_cam, z_cam, cov_x, cov_y, cov_z):
+    def project_3d_covariance_to_2d(self, x_cam, y_cam, z_cam, cov_x, cov_y, cov_z):
+        """
+        @brief Projects 3D covariances onto 2D covariances.
+
+        @param x_cam: X-coordinate in the camera frame.
+        @param y_cam: Y-coordinate in the camera frame.
+        @param z_cam: Z-coordinate in the camera frame.
+        @param cov_x: Covariance along the X-axis.
+        @param cov_y: Covariance along the Y-axis.
+        @param cov_z: Covariance along the Z-axis.
+
+        @return covariance_2d: Computed 2D covariance matrix.
+
+        This method projects the 3D covariance matrix onto a 2D covariance matrix,
+        taking into account the intrinsic camera parameters and the 3D positions.
+        """
         fx = self.camera_info_['fx']
         fy = self.camera_info_['fy']
 
@@ -641,7 +807,7 @@ class Yolo2PoseNode(Node):
         
         return pose_msg
     
-    def transformPose(self, pose: Pose, tr: TransformStamped) -> Pose:
+    def transform_pose(self, pose: Pose, tr: TransformStamped) -> Pose:
         """
         @brief Converts 3D positions in the camera frame to the parent_frame
         @param pose:  3D position in the child frame (sensor e.g. camera)
@@ -667,7 +833,7 @@ class Yolo2PoseNode(Node):
 
         return transformed_pose
     
-    def transformPoseWithCovariance(self, pose: PoseWithCovarianceStamped, tr: TransformStamped) -> PoseWithCovarianceStamped:
+    def transform_pose_cov(self, pose: PoseWithCovarianceStamped, tr: TransformStamped) -> PoseWithCovarianceStamped:
         """
         @brief Converts 3D pose with covariance from the frame in pose to the frame in tr
         @param pose:  PoseWithCovarianceStamped
@@ -676,12 +842,12 @@ class Yolo2PoseNode(Node):
         """
         
         try:
-            pose_with_cov_stamped_msg = do_transform_pose_with_covariance_stamped(pose, tr)
+            pose_cov_stamped = do_transform_pose_with_covariance_stamped(pose, tr)
         except Exception as e:
             self.get_logger().error("[transformPoseWithCovariance] Error in transforming pose with covariance {}".format(e))
             return None
 
-        return pose_with_cov_stamped_msg
+        return pose_cov_stamped
     
 
 
