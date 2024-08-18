@@ -42,3 +42,6 @@ TBD
 * There should be a valid static transformation between the robot base link frame and the camera frame. For an example, see [here](https://github.com/mzahana/d2dtracker_sim/blob/5ea454e95fd292ab16cb3d28c50bb2182572ad52/launch/interceptor.launch.py#L94). This is required to compute the position of the detected drone in the observer's localization frame, which can be sent to a Kalman filter in a later stage.
 * You can configure the depth-based detection parameters in [here](https://github.com/mzahana/d2dtracker_drone_detector/blob/366cf6440327db84f493fca2337a3b551edffeb2/config/detection_param.yaml)
 * Make sure that you build your workspace after any modifications, using `colcon build`
+
+# TODO
+* Support 3D LiDAR measurements
