@@ -2,7 +2,7 @@
 
 This repository provides an implementation of the SMART-TRACK framework, which is currently under review in IEEE Sensors. The SMART-TRACK framework is designed to enhance UAV object tracking by using a novel measurement augmentation system that leverages Kalman Filter (KF) predictions to guide the detection and localization process. This approach is particularly effective in scenarios where primary object detectors might fail intermittently, ensuring more robust state estimation and continuity in tracking. The framework is implemented as a ROS 2 package with nodes that perform drone detection using neural networks and depth maps.
 
-**NOTE** Use the `ros2__humble` branch if you use use ROS 2 humble (the currentloy supported version)
+**NOTE** Use the `ros2_humble` branch if you use use ROS 2 humble (the currently supported version)
 
 <!-- ![D2DTracker System Architecture](images/d2dtracker_system_architecture.png "D2DTracker System Architecture")
 
