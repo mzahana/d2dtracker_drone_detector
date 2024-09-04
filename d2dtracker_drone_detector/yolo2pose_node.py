@@ -342,6 +342,10 @@ class Yolo2PoseNode(Node):
         try:
             # Convert ROS Image message to OpenCV image
             cv_image = self.cv_bridge_.imgmsg_to_cv2(msg , desired_encoding="32FC1")#"16UC1")
+            depth_copy_vis = (cv_image * 255).astype(np.uint8)
+            depth_copy_vis = cv2.bitwise_not(depth_copy_vis)
+
+            depth_copy_vis = cv2.cvtColor(depth_copy_vis, cv2.COLOR_GRAY2RGB)
         except Exception as e:
             self.get_logger().error("[Yolo2PoseNode::yolo_process_pose] Image to CvImg conversion error {}".format(e))
             return
@@ -399,11 +403,13 @@ class Yolo2PoseNode(Node):
 
                 if transformed_pose_msg is not None:
                     poses_msg.poses.append(transformed_pose_msg)
-        
-        center_coordinates = (int(obj.bbox.center.position.x), int(obj.bbox.center.position.y))
-        cv2.circle(cv_image, center_coordinates, int(w/2), ellipse_color, 1)
-        cv2.putText(cv_image, "YOLO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
-        image_msg = self.cv_bridge_.cv2_to_imgmsg(cv_image, encoding="passthrough")
+            center_coordinates = (int(obj.bbox.center.position.x), int(obj.bbox.center.position.y))
+            cv2.circle(depth_copy_vis, center_coordinates, int(w/2), ellipse_color, 1)
+            cv2.putText(depth_copy_vis, "YOLO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
+        # center_coordinates = (int(obj.bbox.center.position.x), int(obj.bbox.center.position.y))
+        # cv2.circle(depth_copy_vis, center_coordinates, int(w/2), ellipse_color, 1)
+        # cv2.putText(depth_copy_vis, "YOLO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
+        image_msg = self.cv_bridge_.cv2_to_imgmsg(depth_copy_vis, encoding="passthrough")
         self.overlay_ellipses_image_yolo_.publish(image_msg)
         return poses_msg 
 
@@ -448,7 +454,14 @@ class Yolo2PoseNode(Node):
         poses_msg_kf.header.frame_id = self.reference_frame_
         poses_msg_kf.poses.clear()
         # depth_range = []
-        depth_image_cv = self.cv_bridge_.imgmsg_to_cv2(msg, desired_encoding='passthrough')    
+        depth_image_cv = self.cv_bridge_.imgmsg_to_cv2(msg, desired_encoding='passthrough') 
+        # Make a copy of the grayscale depth image
+        depth_copy_vis = copy.deepcopy(depth_image_cv)
+        # Convert the normalized depth image to uint8
+        depth_copy_vis = (depth_copy_vis * 255).astype(np.uint8)
+        depth_copy_vis = cv2.bitwise_not(depth_copy_vis)
+
+        depth_copy_vis = cv2.cvtColor(depth_copy_vis, cv2.COLOR_GRAY2RGB)
         image_height, image_width = depth_image_cv.shape[:2]   
         self.latest_pixels_, self.latest_covariances_2d_, self.latest_depth_ranges_ = self.process_and_store_track_data(self.latest_kf_tracks_msg_)
         # Iterate over the detected objects' mean pixels, covariance matrices, and depth ranges.
@@ -464,7 +477,10 @@ class Yolo2PoseNode(Node):
             x, y = mean_pixel
             if 0 <= x < image_width and 0 <= y < image_height:
 
-                cv2.ellipse(depth_image_cv, tuple(mean_pixel), axes_lengths, rotation_angle, 0, 360, (0, 255, 0), 1)
+                cv2.ellipse(depth_copy_vis, tuple(mean_pixel), axes_lengths, rotation_angle, 0, 360, (255, 0, 0), 2)
+                # cv2.ellipse(depth_copy_vis, tuple(mean_pixel), axes_lengths_3, rotation_angle, 0, 360, (255, 0, 0), 1)
+                # cv2.ellipse(depth_copy_vis, tuple(mean_pixel), axes_lengths_5, rotation_angle, 0, 360, (0, 0, 255), 1)
+
             else:
                 print(f"Mean pixel {mean_pixel} is outside the image size.")
             # Create a mask for depth values within the specified range.
@@ -528,10 +544,10 @@ class Yolo2PoseNode(Node):
                 f"[Yolo2PoseNode::kf_process_pose] Depth value {nearest_depth_value} Small {depth_range[0]} Big {depth_range[1]} at centroid ({nearest_centroid_x}, {nearest_centroid_y}) is out of range."
             )
         # cv2.ellipse(depth_mask, tuple(mean_pixel), axes_lengths, rotation_angle, 0, 360, (0, 255, 0), 1)
-        cv2.putText(depth_image_cv, "KF", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(depth_copy_vis, "KF", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         # Convert the modified depth image with ellipses to a ROS Image message
-        ellipses_image_msg = self.cv_bridge_.cv2_to_imgmsg(depth_image_cv, encoding="passthrough")
+        ellipses_image_msg = self.cv_bridge_.cv2_to_imgmsg(depth_copy_vis, encoding="passthrough")
 
         # Publish the modified depth image with ellipses on a ROS2 topic
         self.overlay_ellipses_image_yolo_.publish(ellipses_image_msg)
