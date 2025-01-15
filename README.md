@@ -1,3 +1,7 @@
+# OFFICIAL REPO HAS MOVED!
+**Kindly use the new official repository of the SMART-TRACK framework at: https://github.com/mzahana/smart_track**
+
+
 # d2dtracker_drone_detector
 
 This repository provides an implementation of the SMART-TRACK framework, which is currently under review in IEEE Sensors. The SMART-TRACK framework is designed to enhance UAV object tracking by using a novel measurement augmentation system that leverages Kalman Filter (KF) predictions to guide the detection and localization process. This approach is particularly effective in scenarios where primary object detectors might fail intermittently, ensuring more robust state estimation and continuity in tracking. The framework is implemented as a ROS 2 package with nodes that perform drone detection using neural networks and depth maps.
